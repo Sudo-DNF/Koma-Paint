@@ -88,6 +88,12 @@
 #include "kis_layer_utils.h"
 
 #include "ui_WdgLayerBox.h"
+#include <KomaPaintTokens.h>
+#include <kis_layer_properties_icons.h>
+#include <kis_node_view_color_scheme.h>
+#include <kis_signals_blocker.h>
+#include <QPainter>
+#include <QWidgetAction>
 #include "NodeView.h"
 #include "SyncButtonAndAction.h"
 #include "KisMenuStyleDontCloseOnAlt.h"
@@ -269,6 +275,8 @@ LayerBox::LayerBox()
 
     connect(m_nodeModel, SIGNAL(dataChanged(QModelIndex,QModelIndex)),
             &m_colorLabelCompressor, SLOT(start()));
+
+    setupQuickToggles();
 
     m_wdgLayerBox->listLayers->setModel(m_filteringModel);
     // this connection should be done *after* the setModel() call to
@@ -736,6 +744,153 @@ void LayerBox::updateUI()
             m_wdgLayerBox->doubleOpacity->setEnabled(false);
         }
     }
+
+    updateQuickToggles(activeNode);
+}
+
+void LayerBox::setupQuickToggles()
+{
+    struct Toggle {
+        KoID id;
+        QString toolTip;
+    };
+    const Toggle toggles[] = {
+        {KisLayerPropertiesIcons::inheritAlpha, i18nc("@info:tooltip", "Clip to layer below")},
+        {KisLayerPropertiesIcons::alphaLocked, i18nc("@info:tooltip", "Lock transparent pixels")},
+        {KisLayerPropertiesIcons::locked, i18nc("@info:tooltip", "Lock layer")},
+        {KisLayerPropertiesIcons::draftLayer, i18nc("@info:tooltip", "Set as draft layer (shown on canvas, left out of exports)")},
+    };
+
+    QHBoxLayout *row = new QHBoxLayout();
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(KomaPaint::Space::s1);
+
+    for (const Toggle &toggle : toggles) {
+        QToolButton *button = new QToolButton(m_wdgLayerBox->listLayers->parentWidget());
+        button->setCheckable(true);
+        button->setAutoRaise(true);
+        button->setIconSize(QSize(16, 16));
+        button->setToolTip(toggle.toolTip);
+        button->setProperty("layerPropertyId", toggle.id.id());
+        button->setEnabled(false);
+        connect(button, &QToolButton::clicked, this, &LayerBox::slotQuickToggleClicked);
+        m_quickToggles.insert(toggle.id.id(), button);
+        row->addWidget(button);
+    }
+
+    m_quickColorSelector = new KisColorLabelSelectorWidgetMenuWrapper(this);
+    connect(m_quickColorSelector->colorLabelSelector(), SIGNAL(currentIndexChanged(int)),
+            SLOT(slotQuickColorLabelChanged(int)));
+    QWidgetAction *colorAction = new QWidgetAction(this);
+    colorAction->setDefaultWidget(m_quickColorSelector);
+    QMenu *colorMenu = new QMenu(this);
+    colorMenu->addAction(colorAction);
+
+    m_quickColorButton = new QToolButton(m_wdgLayerBox->listLayers->parentWidget());
+    m_quickColorButton->setAutoRaise(true);
+    m_quickColorButton->setIconSize(QSize(16, 16));
+    m_quickColorButton->setPopupMode(QToolButton::InstantPopup);
+    m_quickColorButton->setMenu(colorMenu);
+    m_quickColorButton->setToolTip(i18nc("@info:tooltip", "Layer color"));
+    m_quickColorButton->setEnabled(false);
+    row->addWidget(m_quickColorButton);
+    row->addStretch(1);
+
+    QBoxLayout *mainLayout = qobject_cast<QBoxLayout*>(m_wdgLayerBox->listLayers->parentWidget()->layout());
+    const int opacityRow = mainLayout ? mainLayout->indexOf(m_wdgLayerBox->opacityLayout) : -1;
+    if (mainLayout && opacityRow >= 0) {
+        mainLayout->insertLayout(opacityRow + 1, row);
+    } else if (mainLayout) {
+        mainLayout->insertLayout(0, row);
+    }
+}
+
+void LayerBox::updateQuickToggles(KisNodeSP activeNode)
+{
+    const KisBaseNode::PropertyList properties = activeNode ? activeNode->sectionModelProperties()
+                                                            : KisBaseNode::PropertyList();
+    const bool editable = activeNode && activeNode->isEditable(false);
+
+    for (auto it = m_quickToggles.begin(); it != m_quickToggles.end(); ++it) {
+        QToolButton *button = it.value();
+        auto property = std::find_if(properties.begin(), properties.end(),
+                                     [&it](const KisBaseNode::Property &p) { return p.id == it.key(); });
+        const bool available = property != properties.end() && property->isMutable;
+        const bool checked = available && property->state.toBool();
+
+        // Locking stays reachable on a locked layer so it can be unlocked.
+        const bool isLockToggle = it.key() == KisLayerPropertiesIcons::locked.id();
+        button->setEnabled(available && (editable || isLockToggle));
+
+        KisSignalsBlocker blocker(button);
+        button->setChecked(checked);
+        if (available) {
+            button->setIcon(checked ? property->onIcon : property->offIcon);
+        } else {
+            const KisBaseNode::Property fallback =
+                    KisLayerPropertiesIcons::getProperty(KoID(it.key()), false);
+            button->setIcon(fallback.offIcon);
+        }
+    }
+
+    if (m_quickColorButton) {
+        m_quickColorButton->setEnabled(activeNode && editable);
+        const int label = activeNode ? activeNode->colorLabelIndex() : 0;
+        const QColor color = KisNodeViewColorScheme::instance()->colorFromLabelIndex(label);
+
+        const qreal dpr = devicePixelRatioF();
+        QPixmap swatch(QSize(16, 16) * dpr);
+        swatch.setDevicePixelRatio(dpr);
+        swatch.fill(Qt::transparent);
+        QPainter painter(&swatch);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const KomaPaint::Theme t = KomaPaint::themeFor(palette());
+        painter.setPen(QPen(t.border, 1.0));
+        painter.setBrush(color.alpha() > 0 ? QBrush(color) : Qt::NoBrush);
+        painter.drawRoundedRect(QRectF(1.5, 1.5, 13, 13), KomaPaint::Radius::xs, KomaPaint::Radius::xs);
+        if (color.alpha() == 0) {
+            painter.setPen(QPen(t.textMuted, 1.0));
+            painter.drawLine(QPointF(4, 12), QPointF(12, 4));
+        }
+        painter.end();
+        m_quickColorButton->setIcon(QIcon(swatch));
+
+        if (m_quickColorSelector) {
+            KisSignalsBlocker blocker(m_quickColorSelector->colorLabelSelector());
+            m_quickColorSelector->colorLabelSelector()->setCurrentIndex(label);
+        }
+    }
+}
+
+void LayerBox::slotQuickToggleClicked(bool checked)
+{
+    QToolButton *button = qobject_cast<QToolButton*>(sender());
+    if (!button || !m_nodeManager || !m_image) return;
+
+    const QString propertyId = button->property("layerPropertyId").toString();
+    const KoID id = propertyId == KisLayerPropertiesIcons::inheritAlpha.id() ? KisLayerPropertiesIcons::inheritAlpha
+                  : propertyId == KisLayerPropertiesIcons::alphaLocked.id() ? KisLayerPropertiesIcons::alphaLocked
+                  : propertyId == KisLayerPropertiesIcons::locked.id() ? KisLayerPropertiesIcons::locked
+                  : KisLayerPropertiesIcons::draftLayer;
+
+    Q_FOREACH (KisNodeSP node, m_nodeManager->selectedNodes()) {
+        const KisBaseNode::PropertyList properties = node->sectionModelProperties();
+        const bool hasProperty = std::any_of(properties.begin(), properties.end(),
+                                             [&id](const KisBaseNode::Property &p) { return p.id == id.id() && p.isMutable; });
+        if (hasProperty) {
+            KisLayerPropertiesIcons::setNodePropertyAutoUndo(node, id, checked, m_image);
+        }
+    }
+    updateUI();
+}
+
+void LayerBox::slotQuickColorLabelChanged(int label)
+{
+    slotColorLabelChanged(label);
+    if (m_quickColorButton && m_quickColorButton->menu()) {
+        m_quickColorButton->menu()->hide();
+    }
+    updateUI();
 }
 
 

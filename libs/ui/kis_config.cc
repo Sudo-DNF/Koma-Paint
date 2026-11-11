@@ -2112,7 +2112,8 @@ void KisConfig::setToolbarSlider(int sliderNumber, const QString &slider)
 
 int KisConfig::layerThumbnailSize(bool defaultValue) const
 {
-    return (defaultValue ? 20 : m_cfg.readEntry("layerThumbnailSize", 20));
+    // Large enough for the two-line layer rows (opacity and mode above the name).
+    return (defaultValue ? 32 : m_cfg.readEntry("layerThumbnailSize", 32));
 }
 
 void KisConfig::setLayerThumbnailSize(int size)
@@ -2222,7 +2223,8 @@ void KisConfig::setDefaultBackgroundColor(const QLatin1String &dialogType, const
 
 KisConfig::BackgroundStyle KisConfig::defaultBackgroundStyle(const QLatin1String &dialogType, bool defaultValue) const
 {
-  return (KisConfig::BackgroundStyle)(defaultValue ? RASTER_LAYER : m_cfg.readEntry(dialogType + "BackgroundStyleForNewImage", (int)RASTER_LAYER));
+  // New documents start on a Paper fill layer, as in Clip Studio Paint.
+  return (KisConfig::BackgroundStyle)(defaultValue ? FILL_LAYER : m_cfg.readEntry(dialogType + "BackgroundStyleForNewImage", (int)FILL_LAYER));
 }
 
 void KisConfig::setDefaultBackgroundStyle(const QLatin1String &dialogType, KisConfig::BackgroundStyle value)
@@ -2944,7 +2946,8 @@ void KisConfig::setRenamePastedLayers(bool value)
 
 KisConfig::LayerInfoTextStyle KisConfig::layerInfoTextStyle(bool defaultValue) const
 {
-    return (KisConfig::LayerInfoTextStyle)(defaultValue ? INFOTEXT_NONE : m_cfg.readEntry("layerInfoTextStyle", (int)INFOTEXT_NONE));
+    // Koma Paint shows opacity and blending mode on every layer, as Clip Studio Paint does.
+    return (KisConfig::LayerInfoTextStyle)(defaultValue ? INFOTEXT_DETAILED : m_cfg.readEntry("layerInfoTextStyle", (int)INFOTEXT_DETAILED));
 }
 
 void KisConfig::setLayerInfoTextStyle(KisConfig::LayerInfoTextStyle value)

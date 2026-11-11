@@ -1424,6 +1424,24 @@ KritaUtils::BackgroudSavingStartResult KisDocument::initiateSavingInBackground(c
         waitForImage(clonedDocument->image());
     }
 
+    // Draft layers stay in Krita documents but are left out of exports.
+    const bool keepsDraftLayers = job.mimeType == nativeFormatMimeType()
+            || job.mimeType == QByteArrayLiteral("application/x-krita-archive");
+    if (!keepsDraftLayers) {
+        bool hidDraftLayers = false;
+        KisLayerUtils::recursiveApplyNodes(clonedDocument->image()->root(), [&hidDraftLayers](KisNodeSP node) {
+            KisLayer *layer = qobject_cast<KisLayer*>(node.data());
+            if (layer && layer->isDraft() && layer->visible()) {
+                layer->setVisible(false);
+                hidDraftLayers = true;
+            }
+        });
+        if (hidDraftLayers) {
+            clonedDocument->image()->refreshGraphAsync();
+            waitForImage(clonedDocument->image());
+        }
+    }
+
     KisConfig cfg(true);
     if (cfg.trimKra()) {
         clonedDocument->image()->cropImage(clonedDocument->image()->bounds());
@@ -2701,14 +2719,16 @@ bool KisDocument::newImage(const QString& name,
         strippedAlpha.setOpacity(OPACITY_OPAQUE_U8);
 
         if (bgStyle == KisConfig::RASTER_LAYER) {
-            bgLayer = new KisPaintLayer(image.data(), i18nc("Name for the bottom-most layer in the layerstack", "Background"), OPACITY_OPAQUE_U8, cs);
+            bgLayer = new KisPaintLayer(image.data(), i18nc("Name for the bottom-most layer in the layerstack", "Paper"), OPACITY_OPAQUE_U8, cs);
             bgLayer->paintDevice()->setDefaultPixel(strippedAlpha);
             bgLayer->setPinnedToTimeline(autopin);
         } else if (bgStyle == KisConfig::FILL_LAYER) {
             KisFilterConfigurationSP filter_config = KisGeneratorRegistry::instance()->get("color")->defaultConfiguration(KisGlobalResourcesInterface::instance());
             filter_config->setProperty("color", strippedAlpha.toQColor());
             filter_config->createLocalResourcesSnapshot();
-            bgLayer = new KisGeneratorLayer(image.data(), i18nc("Name of automatically created background color fill layer", "Background Fill"), filter_config, image->globalSelection());
+            bgLayer = new KisGeneratorLayer(image.data(), i18nc("Name of automatically created background color fill layer", "Paper"), filter_config, image->globalSelection());
+            // Paper cannot be painted on, so there is always a layer to draw on above it.
+            numberOfLayers = qMax(numberOfLayers, 2);
         }
 
         bgLayer->setOpacity(bgColor.opacityU8());

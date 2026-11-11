@@ -36,6 +36,7 @@ public:
     static const KoID layerError;
     static const KoID layerColorSpaceMismatch;
     static const KoID antialiased;
+    static const KoID draftLayer;
 
     static KisLayerPropertiesIcons* instance();
 

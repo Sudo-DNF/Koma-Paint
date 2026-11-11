@@ -37,6 +37,7 @@ const KoID KisLayerPropertiesIcons::openFileLayerFile("open-file-layer-file", ki
 const KoID KisLayerPropertiesIcons::layerError("layer-error", ki18n("Error"));
 const KoID KisLayerPropertiesIcons::layerColorSpaceMismatch("layer-color-space-mismatch", ki18n("Layer Color Space Mismatch"));
 const KoID KisLayerPropertiesIcons::antialiased("antialiased", ki18n("Anti-aliasing"));
+const KoID KisLayerPropertiesIcons::draftLayer("draft-layer", ki18n("Draft Layer"));
 
 struct IconsPair {
     IconsPair() {}
@@ -87,6 +88,7 @@ void KisLayerPropertiesIcons::updateIcons()
     m_d->icons.insert(openFileLayerFile.id(), IconsPair(KisIconUtils::loadIcon("document-open"), KisIconUtils::loadIcon("document-open")));
     m_d->icons.insert(layerError.id(), IconsPair(KisIconUtils::loadIcon("warning"), KisIconUtils::loadIcon("warning")));
     m_d->icons.insert(layerColorSpaceMismatch.id(), IconsPair(KisIconUtils::loadIcon("different-colorspace"), KisIconUtils::loadIcon("different-colorspace")));
+    m_d->icons.insert(draftLayer.id(), IconsPair(KisIconUtils::loadIcon("draft-layer-on"), KisIconUtils::loadIcon("draft-layer-off")));
     m_d->icons.insert(antialiased.id(), IconsPair(KisIconUtils::loadIcon("select-shape"), KisIconUtils::loadIcon("select-pixel")));
     // No static icons for colorOverlay.
 }

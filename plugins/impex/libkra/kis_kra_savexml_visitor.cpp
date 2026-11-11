@@ -348,6 +348,10 @@ void KisSaveXmlVisitor::loadLayerAttributes(const QDomElement &el, KisLayer *lay
         layer->setPinnedToTimeline(el.attribute(VISIBLE_IN_TIMELINE).toInt());
     }
 
+    if (el.hasAttribute(DRAFT_LAYER)) {
+        layer->setDraft(el.attribute(DRAFT_LAYER).toInt());
+    }
+
     if (el.hasAttribute(LAYER_STYLE_UUID)) {
         QString uuidString = el.attribute(LAYER_STYLE_UUID);
         QUuid uuid(uuidString);
@@ -393,6 +397,9 @@ void KisSaveXmlVisitor::saveLayer(QDomElement & el, const QString & layerType, c
     el.setAttribute(COLLAPSED, layer->collapsed());
     el.setAttribute(COLOR_LABEL, layer->colorLabelIndex());
     el.setAttribute(VISIBLE_IN_TIMELINE, layer->isPinnedToTimeline());
+    if (layer->isDraft()) {
+        el.setAttribute(DRAFT_LAYER, 1);
+    }
 
     if(layerType == SHAPE_LAYER) {
         const KisShapeLayer *shapeLayer = static_cast<const KisShapeLayer*>(layer);

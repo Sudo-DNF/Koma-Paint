@@ -285,6 +285,7 @@ KisBaseNode::PropertyList KisLayer::sectionModelProperties() const
     }
 
     l << KisLayerPropertiesIcons::getProperty(KisLayerPropertiesIcons::inheritAlpha, alphaChannelDisabled());
+    l << KisLayerPropertiesIcons::getProperty(KisLayerPropertiesIcons::draftLayer, isDraft());
 
     if (colorOverlayMask()) {
         // Use an immutable property (with a string value), to hide it in the layer properties dialog.
@@ -301,6 +302,10 @@ void KisLayer::setSectionModelProperties(const KisBaseNode::PropertyList &proper
     Q_FOREACH (const KisBaseNode::Property &property, properties) {
         if (property.id == KisLayerPropertiesIcons::inheritAlpha.id()) {
             disableAlphaChannel(property.state.toBool());
+        }
+
+        if (property.id == KisLayerPropertiesIcons::draftLayer.id()) {
+            setDraft(property.state.toBool());
         }
 
         if (property.id == KisLayerPropertiesIcons::layerStyle.id()) {
@@ -329,6 +334,18 @@ void KisLayer::disableAlphaChannel(bool disable)
         newChannelFlags |= colorSpace()->channelFlags(false, true);
 
     setChannelFlags(newChannelFlags);
+}
+
+bool KisLayer::isDraft() const
+{
+    return nodeProperties().boolProperty(QStringLiteral("komapaint-draft"), false);
+}
+
+void KisLayer::setDraft(bool draft)
+{
+    if (isDraft() == draft) return;
+    setNodeProperty(QStringLiteral("komapaint-draft"), draft);
+    baseNodeChangedCallback();
 }
 
 bool KisLayer::alphaChannelDisabled() const

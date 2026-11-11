@@ -12,6 +12,8 @@
 #define KIS_LAYERBOX_H
 
 #include <QList>
+#include <QHash>
+#include <QToolButton>
 #include <QDockWidget>
 #include <QPointer>
 
@@ -83,6 +85,8 @@ protected:
 private Q_SLOTS:
 
     void notifyImageDeleted();
+    void slotQuickToggleClicked(bool checked);
+    void slotQuickColorLabelChanged(int label);
 
     void slotContextMenuRequested(const QPoint &pos, const QModelIndex &index);
 
@@ -162,6 +166,14 @@ private:
     QPointer<KisNodeManager> m_nodeManager;
     QPointer<KisColorLabelSelectorWidgetMenuWrapper> m_colorSelector;
     QPointer<QWidgetAction> m_colorSelectorAction;
+
+    /// Clip Studio Paint style quick property toggles above the layer list,
+    /// keyed by layer property id.
+    QHash<QString, QToolButton*> m_quickToggles;
+    QPointer<QToolButton> m_quickColorButton;
+    QPointer<KisColorLabelSelectorWidgetMenuWrapper> m_quickColorSelector;
+    void setupQuickToggles();
+    void updateQuickToggles(KisNodeSP activeNode);
     Ui_WdgLayerBox* m_wdgLayerBox;
     int m_newOpacity;
     KisNodeSP m_changedOpacityNode;

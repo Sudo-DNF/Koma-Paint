@@ -205,6 +205,8 @@
         <file>dark_visible.svg</file>
         <file>dark_layer-animated.svg</file>
         <file>dark_layer-locked.svg</file>
+        <file>dark_draft-layer-on.svg</file>
+        <file>dark_draft-layer-off.svg</file>
         <file>dark_layer-unlocked.svg</file>
         <file>dark_layer-style-disabled.svg</file>
         <file>dark_layer-style-enabled.svg</file>
@@ -329,6 +331,8 @@
         <file>light_visible.svg</file>
         <file>light_layer-animated.svg</file>
         <file>light_layer-locked.svg</file>
+        <file>light_draft-layer-on.svg</file>
+        <file>light_draft-layer-off.svg</file>
         <file>light_layer-unlocked.svg</file>
         <file>light_layer-style-disabled.svg</file>
         <file>light_layer-style-enabled.svg</file>

@@ -1014,6 +1014,10 @@ KisNodeSP KisKraLoader::loadNode(const QDomElement& element, KisImageSP image)
     if (! id.isNull())          // if no uuid in file, new one has been generated already
         node->setUuid(id);
 
+    if (KisLayer *layer = qobject_cast<KisLayer*>(node.data())) {
+        layer->setDraft(element.attribute(DRAFT_LAYER, "0") != "0");
+    }
+
     if (node->inherits("KisLayer") || node->inherits("KisColorizeMask")) {
         QString compositeOpName = element.attribute(COMPOSITE_OP, "normal");
         node->setCompositeOpId(compositeOpName);

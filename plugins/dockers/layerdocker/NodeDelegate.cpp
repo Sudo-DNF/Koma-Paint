@@ -7,6 +7,7 @@
 */
 #include "kis_config.h"
 #include "NodeDelegate.h"
+#include <KomaPaintTokens.h>
 #include "kis_node_model.h"
 #include "NodeToolTip.h"
 #include "NodeView.h"
@@ -117,7 +118,18 @@ void NodeDelegate::paint(QPainter *p, const QStyleOptionViewItem &o, const QMode
     {
         QStyleOptionViewItem option = getOptions(o, index);
         QStyle *style = option.widget ? option.widget->style() : QApplication::style();
+
+        // The selected layer gets a raised row and a pulse marker on the
+        // name column, rather than an accent-coloured fill.
+        const KomaPaint::Theme theme = KomaPaint::themeFor(option.palette);
+        option.palette.setColor(QPalette::Highlight, theme.surfaceRaised);
+        option.palette.setColor(QPalette::HighlightedText, theme.text);
         style->drawPrimitive(QStyle::PE_PanelItemViewItem, &option, p, option.widget);
+        if ((option.state & QStyle::State_Selected) && index.column() == NodeView::DEFAULT_COL) {
+            const QRect marker(option.rect.left(), option.rect.top() + KomaPaint::Space::s1,
+                               3, option.rect.height() - 2 * KomaPaint::Space::s1);
+            p->fillRect(marker, theme.pulse);
+        }
 
         bool shouldGrayOut = index.data(KisNodeModel::ShouldGrayOutRole).toBool();
         if (shouldGrayOut) {
@@ -393,10 +405,10 @@ void NodeDelegate::drawText(QPainter *p, const QStyleOptionViewItem &option, con
 
             const int rectCenter = rc.height()/2;
             const int nameWidth = p->fontMetrics().horizontalAdvance(elided);
-            // draw the layer name
+            // draw the layer name; in the two-line layout it sits under the
+            // opacity and blending mode line, as in Clip Studio Paint
             if (!useOneLine) {
-                // enforce Qt::TextSingleLine because we are adding a line below it
-                p->drawText(rc.adjusted(0, 0, 0, -rectCenter), Qt::AlignLeft | Qt::AlignBottom | Qt::TextSingleLine, elided);
+                p->drawText(rc.adjusted(0, rectCenter, 0, 0), Qt::AlignLeft | Qt::AlignTop | Qt::TextSingleLine, elided);
             }
             else {
                 p->drawText(rc.adjusted(0, 0, 0, 0), Qt::AlignLeft | Qt::AlignVCenter, elided);
@@ -411,7 +423,7 @@ void NodeDelegate::drawText(QPainter *p, const QStyleOptionViewItem &option, con
             }
             if (!useOneLine) {
                 const QString infoTextElided = p->fontMetrics().elidedText(infoText, Qt::ElideRight, rc.width());
-                p->drawText(rc.adjusted(0, rectCenter, 0, 0), Qt::AlignLeft | Qt::AlignTop, infoTextElided);
+                p->drawText(rc.adjusted(0, 0, 0, -rectCenter), Qt::AlignLeft | Qt::AlignBottom | Qt::TextSingleLine, infoTextElided);
             }
             else {
                 const QString infoTextElided = p->fontMetrics().elidedText(" "+infoText, Qt::ElideRight, rc.width()-nameWidth);

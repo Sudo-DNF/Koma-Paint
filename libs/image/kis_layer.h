@@ -132,6 +132,18 @@ public:
     bool alphaChannelDisabled() const;
 
     /**
+     * A draft layer is shown on the canvas but left out when the image is
+     * exported to a flat or layered non-Krita format. Use it for sketches,
+     * guides and notes.
+     */
+    bool isDraft() const;
+
+    /**
+     * Marks the layer as a draft layer, see isDraft().
+     */
+    void setDraft(bool draft);
+
+    /**
      * set the channelflags for this layer to the specified bit array.
      * The bit array must have exactly the same number of channels as
      * the colorspace this layer is in, or be empty, in which case all
