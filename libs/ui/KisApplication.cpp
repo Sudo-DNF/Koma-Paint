@@ -154,7 +154,7 @@ const QTime appStartTime(QTime::currentTime());
  */
 void applyKomaPaintDefaults()
 {
-    static const int currentDefaultsVersion = 3;
+    static const int currentDefaultsVersion = 4;
 
     KConfigGroup komaGroup(KSharedConfig::openConfig(), "KomaPaint");
     const int appliedVersion = komaGroup.readEntry("DefaultsVersion", 0);
@@ -193,6 +193,12 @@ void applyKomaPaintDefaults()
         // the resource version marker makes the resource locator copy the
         // default resources that are missing; existing files are kept.
         QFile::remove(KoResourcePaths::getAppDataLocation() + QStringLiteral("/KRITA_RESOURCE_VERSION"));
+    }
+
+    if (appliedVersion < 4) {
+        // The Color Mixing palette replaces the Digital Colors Mixer in Koma Studio.
+        KConfigGroup mainWindowGroup(KSharedConfig::openConfig(), "MainWindow");
+        mainWindowGroup.revertToDefault("State");
     }
 
     komaGroup.writeEntry("DefaultsVersion", currentDefaultsVersion);

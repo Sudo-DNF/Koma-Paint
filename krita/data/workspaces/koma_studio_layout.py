@@ -55,7 +55,7 @@ TOOL_PROPERTIES = "sharedtooldocker"
 COLOR_WHEEL = "WideGamutColorSelector"
 NAVIGATOR = "OverviewDocker"
 LAYERS = "KisLayerBox"
-MIXING_PALETTE = "DigitalMixer"
+MIXING_PALETTE = "MixingPaletteDocker"
 
 # Heights within each panel column, top to bottom.
 LEFT_COLUMN = [(SUB_TOOLS, 380), (TOOL_PROPERTIES, 360), (COLOR_WHEEL, 260)]
@@ -65,7 +65,7 @@ RIGHT_COLUMN = [(NAVIGATOR, 220), (LAYERS, 520), (MIXING_PALETTE, 260)]
 # workspace switch from leaving docks of the previous layout on screen.
 HIDDEN_RIGHT = [
     "ArrangeDocker", "ArtisticColorSelector", "BrushHudDocker", "ChannelDocker",
-    "ColorSelectorNg", "ColorSlider", "CompositionDocker", "GamutMask",
+    "ColorSelectorNg", "ColorSlider", "CompositionDocker", "DigitalMixer", "GamutMask",
     "GridDocker", "HistogramDocker", "History", "ImageDocker", "KisBirdeyeBox",
     "KisHistogramDock", "KisHistogramDocker", "KisPainterlyMixerDocker",
     "KisPaletteDocker", "KisTriangleColorSelector", "KoColorDocker",
