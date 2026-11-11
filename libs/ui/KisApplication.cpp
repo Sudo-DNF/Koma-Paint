@@ -154,7 +154,7 @@ const QTime appStartTime(QTime::currentTime());
  */
 void applyKomaPaintDefaults()
 {
-    static const int currentDefaultsVersion = 1;
+    static const int currentDefaultsVersion = 2;
 
     KConfigGroup komaGroup(KSharedConfig::openConfig(), "KomaPaint");
     const int appliedVersion = komaGroup.readEntry("DefaultsVersion", 0);
@@ -167,6 +167,21 @@ void applyKomaPaintDefaults()
         themeGroup.writeEntry("Theme", KomaPaint::defaultThemeName());
         KisConfig cfg(false);
         cfg.setWidgetStyle(QString());
+    }
+
+    if (appliedVersion < 2) {
+        // Koma Studio workspace, Koma Paint canvas controls and the Clip
+        // Studio Paint compatible shortcuts. Reverting to the defaults makes
+        // the values shipped in the bundled kritarc apply.
+        KConfigGroup mainWindowGroup(KSharedConfig::openConfig(), "MainWindow");
+        mainWindowGroup.revertToDefault("State");
+        mainWindowGroup.revertToDefault("CurrentWorkspace");
+
+        KConfigGroup schemesGroup(KSharedConfig::openConfig(), "Shortcut Schemes");
+        schemesGroup.revertToDefault("Current Scheme");
+
+        KConfigGroup generalGroup(KSharedConfig::openConfig(), QString());
+        generalGroup.revertToDefault("currentInputProfile");
     }
 
     komaGroup.writeEntry("DefaultsVersion", currentDefaultsVersion);
@@ -1333,7 +1348,7 @@ void KisApplication::resetConfig()
     // Restore to default workspace
     KConfigGroup cfg = KSharedConfig::openConfig()->group("MainWindow");
 
-    QString currentWorkspace = cfg.readEntry<QString>("CurrentWorkspace", "Default");
+    QString currentWorkspace = cfg.readEntry<QString>("CurrentWorkspace", KomaPaint::defaultWorkspaceName());
     KoResourceServer<KisWorkspaceResource> * rserver = KisResourceServerProvider::instance()->workspaceServer();
     KisWorkspaceResourceSP workspace = rserver->resource("", "", currentWorkspace);
 

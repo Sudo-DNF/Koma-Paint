@@ -631,7 +631,7 @@ KisMainWindow::KisMainWindow(QUuid uuid)
 
 
     if (cfg.readEntry("CanvasOnlyActive", false)) {
-        QString currentWorkspace = cfg.readEntry<QString>("CurrentWorkspace", "Default");
+        QString currentWorkspace = cfg.readEntry<QString>("CurrentWorkspace", KomaPaint::defaultWorkspaceName());
         KoResourceServer<KisWorkspaceResource> * rserver = KisResourceServerProvider::instance()->workspaceServer();
         KisWorkspaceResourceSP workspace = rserver->resource("", "", currentWorkspace);
         if (workspace) {

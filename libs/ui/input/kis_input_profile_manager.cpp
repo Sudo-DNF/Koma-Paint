@@ -6,6 +6,7 @@
  */
 
 #include "kis_input_profile_manager.h"
+#include <KomaPaintTokens.h>
 #include "kis_input_profile.h"
 
 #include <QMap>
@@ -280,8 +281,11 @@ void KisInputProfileManager::loadProfiles()
     QString currentProfile = cfg.currentInputProfile();
     if (d->profiles.size() > 0) {
         if (currentProfile.isEmpty() || !d->profiles.contains(currentProfile)) {
-            QString kritaDefault = QStringLiteral("Krita Default");
-            if (d->profiles.contains(kritaDefault)) {
+            const QString komaDefault = KomaPaint::defaultInputProfileName();
+            const QString kritaDefault = QStringLiteral("Krita Default");
+            if (d->profiles.contains(komaDefault)) {
+                d->currentProfile = d->profiles.value(komaDefault);
+            } else if (d->profiles.contains(kritaDefault)) {
                 d->currentProfile = d->profiles.value(kritaDefault);
             } else {
                 d->currentProfile = d->profiles.begin().value();

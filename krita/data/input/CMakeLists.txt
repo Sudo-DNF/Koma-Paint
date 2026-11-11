@@ -1,4 +1,5 @@
 install(FILES
+    komapaint.profile
     clipstudiopaintcompatible.profile
     kritadefault.profile
     painttoolsaicompatible.profile

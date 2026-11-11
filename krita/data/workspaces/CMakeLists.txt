@@ -5,6 +5,7 @@ install( FILES
     Big_Paint_2.kws
     Big_Vector.kws
     Default.kws
+    KomaStudio.kws
     Small_Vector.kws
     Storyboarding.kws
     VFX_Paint.kws

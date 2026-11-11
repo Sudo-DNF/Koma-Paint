@@ -109,6 +109,18 @@ inline QString defaultThemeName()
     return QStringLiteral("Koma Paint Dark");
 }
 
+/// Name of the default Koma Paint workspace.
+inline QString defaultWorkspaceName()
+{
+    return QStringLiteral("Koma Studio");
+}
+
+/// Name of the default canvas input profile.
+inline QString defaultInputProfileName()
+{
+    return QStringLiteral("Koma Paint");
+}
+
 /// Widget style key for the Koma Paint style.
 inline QString styleKey()
 {

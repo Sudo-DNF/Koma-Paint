@@ -5,6 +5,7 @@
  */
 
 #include "kis_config.h"
+#include <KomaPaintTokens.h>
 
 #include <QtGlobal>
 #include <QApplication>
@@ -677,7 +678,8 @@ void KisConfig::setDefaultGridSpacing(QPoint gridSpacing)
 
 QString KisConfig::getMDIBackgroundColor(bool defaultValue) const
 {
-    QColor col(77, 77, 77);
+    // Koma Paint bg token behind documents.
+    QColor col(KomaPaint::Dark::bg);
     KoColor kol(KoColorSpaceRegistry::instance()->rgb8());
     kol.fromQColor(col);
     QString xml = kol.toXML();
@@ -1333,7 +1335,8 @@ void KisConfig::setScrollingCheckers(bool sc) const
 
 QColor KisConfig::canvasBorderColor(bool defaultValue) const
 {
-    QColor color(QColor(128,128,128));
+    // A quiet neutral around the canvas keeps attention on the artwork.
+    QColor color(KomaPaint::Dark::surfaceRaised);
     return (defaultValue ? color : m_cfg.readEntry("canvasBorderColor", color));
 }
 
