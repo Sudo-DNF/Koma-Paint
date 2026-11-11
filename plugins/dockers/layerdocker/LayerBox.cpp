@@ -90,6 +90,7 @@
 #include "ui_WdgLayerBox.h"
 #include <KomaPaintTokens.h>
 #include <kis_layer_properties_icons.h>
+#include <KomaPaintStyle.h>
 #include <kis_node_view_color_scheme.h>
 #include <kis_signals_blocker.h>
 #include <QPainter>
@@ -180,7 +181,11 @@ LayerBox::LayerBox()
 
     m_wdgLayerBox->setupUi(mainWidget);
 
-    QStyle *newStyle = QStyleFactory::create(m_wdgLayerBox->listLayers->style()->objectName());
+    // The Koma Paint style is not a style plugin, so it is created directly.
+    const QString styleName = m_wdgLayerBox->listLayers->style()->objectName();
+    QStyle *newStyle = styleName == KomaPaint::styleKey()
+            ? new KomaPaintStyle()
+            : QStyleFactory::create(styleName);
     // proxy style steals the ownership of the style and deletes it later
     LayerBoxStyle *proxyStyle = new LayerBoxStyle(newStyle);
 
