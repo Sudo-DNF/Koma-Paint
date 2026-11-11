@@ -51,6 +51,10 @@
 #include "kis_tool_freehand_helper.h"
 #include "strokes/freehand_stroke.h"
 #include "kis_tool_utils.h"
+#include "KomaLineartRecorder.h"
+#include "flake/kis_shape_layer.h"
+#include <KomaPaintToolGroups.h>
+#include <KoCanvasResourceProvider.h>
 
 using namespace std::placeholders; // For _1 placeholder
 
@@ -200,6 +204,10 @@ void KisToolFreehand::activate(const QSet<KoShape*> &shapes)
 
 void KisToolFreehand::deactivate()
 {
+    if (m_lineart && m_lineart->isActive()) {
+        m_lineart->cancel();
+        setMode(KisTool::HOVER_MODE);
+    }
     if (mode() == PAINT_MODE) {
         endStroke();
         setMode(KisTool::HOVER_MODE);
@@ -310,6 +318,37 @@ void KisToolFreehand::endStroke()
     Q_UNUSED(paintOpIgnoredEvent);
 }
 
+bool KisToolFreehand::tryBeginLineart(KoPointerEvent *event)
+{
+    // Brush tools draw editable lineart strokes on vector layers.
+    if (!KomaPaintToolGroups::isBrushTool(toolId()) || nodePaintAbility() != VECTOR || !nodeEditable()) {
+        return false;
+    }
+    KisShapeLayer *layer = dynamic_cast<KisShapeLayer*>(currentNode().data());
+    KisCanvas2 *canvas2 = dynamic_cast<KisCanvas2*>(canvas());
+    if (!layer || !canvas2) {
+        return false;
+    }
+
+    if (!m_lineart) {
+        m_lineart.reset(new KomaLineartRecorder());
+    }
+    const bool erase = canvas2->resourceManager()->resource(KoCanvasResource::EraserMode).toBool();
+    if (!m_lineart->begin(canvas2, layer, event->point, event->pressure(), erase)) {
+        return false;
+    }
+    setMode(KisTool::PAINT_MODE);
+    return true;
+}
+
+void KisToolFreehand::paint(QPainter &gc, const KoViewConverter &converter)
+{
+    KisToolPaint::paint(gc, converter);
+    if (m_lineart) {
+        m_lineart->paint(gc, converter);
+    }
+}
+
 bool KisToolFreehand::primaryActionSupportsHiResEvents() const
 {
     return true;
@@ -323,6 +362,10 @@ void KisToolFreehand::beginPrimaryAction(KoPointerEvent *event)
     lockTemporaryStraightRuler(event->point, event->modifiers());
 
     requestUpdateOutline(temporaryStraightRulerOutlinePosition(event->point), event);
+
+    if (tryBeginLineart(event)) {
+        return;
+    }
 
     NodePaintAbility paintability = nodePaintAbility();
     // XXX: move this to KisTool and make it work properly for clone layers: for clone layers, the shape paint tools don't work either
@@ -358,6 +401,11 @@ void KisToolFreehand::continuePrimaryAction(KoPointerEvent *event)
 {
     CHECK_MODE_SANITY_OR_RETURN(KisTool::PAINT_MODE);
 
+    if (m_lineart && m_lineart->isActive()) {
+        m_lineart->add(event->point, event->pressure());
+        return;
+    }
+
     requestUpdateOutline(temporaryStraightRulerOutlinePosition(event->point), event);
 
     /**
@@ -370,6 +418,12 @@ void KisToolFreehand::endPrimaryAction(KoPointerEvent *event)
 {
     Q_UNUSED(event);
     CHECK_MODE_SANITY_OR_RETURN(KisTool::PAINT_MODE);
+
+    if (m_lineart && m_lineart->isActive()) {
+        m_lineart->finish();
+        setMode(KisTool::HOVER_MODE);
+        return;
+    }
 
     endStroke();
 

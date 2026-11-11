@@ -439,6 +439,8 @@ QString SvgUtil::mapExtendedShapeTag(const QString &tagName, const QDomElement &
 
         if (kritaType == "arc") {
             result = "krita:arc";
+        } else if (kritaType == "komapaint-lineart") {
+            result = "krita:komapaint-lineart";
         } else if (sodipodiType == "arc") {
             result = "sodipodi:arc";
         }

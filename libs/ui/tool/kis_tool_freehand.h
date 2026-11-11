@@ -27,6 +27,7 @@ class KoCanvasBase;
 
 class KisPaintingInformationBuilder;
 class KisToolFreehandHelper;
+class KomaLineartRecorder;
 
 
 class KRITAUI_EXPORT KisToolFreehand : public KisToolPaint
@@ -40,6 +41,7 @@ public:
     ~KisToolFreehand() override;
     int flags() const override;
     void mouseMoveEvent(KoPointerEvent *event) override;
+    void paint(QPainter &gc, const KoViewConverter &converter) override;
     
 
 public Q_SLOTS:
@@ -121,6 +123,10 @@ protected:
     bool m_eraser_snapping {false};
 
 private:
+    /// Starts a lineart stroke when a brush tool is used on a vector layer.
+    bool tryBeginLineart(KoPointerEvent *event);
+
+    QScopedPointer<KomaLineartRecorder> m_lineart;
     KisPaintingInformationBuilder *m_infoBuilder {nullptr};
     KisToolFreehandHelper *m_helper {nullptr};
 

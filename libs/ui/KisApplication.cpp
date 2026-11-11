@@ -7,6 +7,8 @@
 
 #include "KisApplication.h"
 #include "KomaPaintStyle.h"
+#include "flake/KomaLineartShape.h"
+#include <KoShapeRegistry.h>
 #include <KomaPaintTokens.h>
 
 #include <stdlib.h>
@@ -526,6 +528,8 @@ void KisApplication::loadPlugins()
 
     KoShapeRegistry* r = KoShapeRegistry::instance();
     r->add(new KisShapeSelectionFactory());
+    // Lineart strokes on vector layers.
+    r->addFactory(new KomaLineartShapeFactory());
     KoColorSpaceRegistry::instance();
     KisActionRegistry::instance();
     KisFilterRegistry::instance();

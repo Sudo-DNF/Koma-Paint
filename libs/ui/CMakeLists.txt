@@ -172,6 +172,8 @@ set(kritaui_LIB_SRCS
     KisUiFont.cpp
     KomaPaintStyle.cpp
     KomaPaintToolGroups.cpp
+    flake/KomaLineartShape.cpp
+    tool/KomaLineartRecorder.cpp
     KisIdleTasksManager.cpp
     KisIdleTaskStrokeStrategy.cpp
     KisImageThumbnailStrokeStrategy.cpp
