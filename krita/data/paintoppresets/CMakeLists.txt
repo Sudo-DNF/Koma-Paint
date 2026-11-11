@@ -19,6 +19,13 @@ DESTINATION  ${KDE_INSTALL_DATADIR}/krita/paintoppresets)
 
 install( FILES
     "Favorites.tag"
+    Pencil.tag
+    Watercolor.tag
+    Thick_Paint.tag
+    Gouache.tag
+    Airbrush.tag
+    Blend.tag
+    Decoration.tag
     "Pixel_Art.tag"
     Digital.tag        
     Erasers.tag

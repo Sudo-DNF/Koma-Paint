@@ -154,7 +154,7 @@ const QTime appStartTime(QTime::currentTime());
  */
 void applyKomaPaintDefaults()
 {
-    static const int currentDefaultsVersion = 2;
+    static const int currentDefaultsVersion = 3;
 
     KConfigGroup komaGroup(KSharedConfig::openConfig(), "KomaPaint");
     const int appliedVersion = komaGroup.readEntry("DefaultsVersion", 0);
@@ -182,6 +182,17 @@ void applyKomaPaintDefaults()
 
         KConfigGroup generalGroup(KSharedConfig::openConfig(), QString());
         generalGroup.revertToDefault("currentInputProfile");
+    }
+
+    if (appliedVersion < 3) {
+        // The Sub Tool panel replaces Brush Presets in Koma Studio.
+        KConfigGroup mainWindowGroup(KSharedConfig::openConfig(), "MainWindow");
+        mainWindowGroup.revertToDefault("State");
+
+        // Koma Paint ships extra preset tags (the sub tool groups). Clearing
+        // the resource version marker makes the resource locator copy the
+        // default resources that are missing; existing files are kept.
+        QFile::remove(KoResourcePaths::getAppDataLocation() + QStringLiteral("/KRITA_RESOURCE_VERSION"));
     }
 
     komaGroup.writeEntry("DefaultsVersion", currentDefaultsVersion);

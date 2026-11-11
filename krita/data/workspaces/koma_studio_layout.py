@@ -15,7 +15,7 @@ resulting state, so the layout is reproducible instead of hand-recorded.
 
 Layout (left to right):
   * Toolbox: a slim single-column tool strip.
-  * Left panel: sub tools on top, tool properties beneath, colour wheel at
+  * Left panel: the Sub Tool panel on top, tool properties beneath, colour wheel at
     the bottom.
   * Canvas.
   * Right panel: navigator on top, layers in the middle, colour mixing
@@ -50,7 +50,7 @@ RIGHT_PANEL_WIDTH = 300
 
 # Object names of the docks shown in Koma Studio.
 TOOLBOX = "ToolBox"
-SUB_TOOLS = "PresetDocker"
+SUB_TOOLS = "SubToolDocker"
 TOOL_PROPERTIES = "sharedtooldocker"
 COLOR_WHEEL = "WideGamutColorSelector"
 NAVIGATOR = "OverviewDocker"
@@ -70,7 +70,7 @@ HIDDEN_RIGHT = [
     "KisHistogramDock", "KisHistogramDocker", "KisPainterlyMixerDocker",
     "KisPaletteDocker", "KisTriangleColorSelector", "KoColorDocker",
     "KoShapeCollectionDocker", "LogDocker", "LutDocker", "PagerDocker",
-    "PaletteDocker", "PatternDocker", "PresetHistory", "RecorderDocker",
+    "PaletteDocker", "PatternDocker", "PresetDocker", "PresetHistory", "RecorderDocker",
     "Scripting", "Shadow Properties", "Shape Properties", "ShapeCollectionDocker",
     "ShapeSelector", "Simple Text Editor", "SmallColorSelector",
     "SnapGuide Properties", "SnapGuideConfigWidget", "Snapshot",
