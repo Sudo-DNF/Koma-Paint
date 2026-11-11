@@ -128,4 +128,18 @@ void KomaLineartShapeTest::testEditTransformedLine()
     QVERIFY((shape.centerlineInDocument()[1].position - edited[1].position).manhattanLength() < 1e-3);
 }
 
+void KomaLineartShapeTest::testNewLineStaysWhereDrawn()
+{
+    // A line drawn away from the document origin must stay where it was drawn.
+    const QVector<KomaLineartPoint> drawn = {{QPointF(300, 200), 4}, {QPointF(420, 260), 6}, {QPointF(500, 240), 2}};
+    KomaLineartShape shape;
+    shape.setCenterlineInDocument(drawn);
+    const auto placed = shape.centerlineInDocument();
+    QCOMPARE(placed.size(), drawn.size());
+    for (int i = 0; i < drawn.size(); ++i) {
+        QVERIFY((placed[i].position - drawn[i].position).manhattanLength() < 1e-3);
+    }
+    QVERIFY(shape.absoluteTransformation().map(shape.outline()).boundingRect().contains(QPointF(420, 260)));
+}
+
 SIMPLE_TEST_MAIN(KomaLineartShapeTest)

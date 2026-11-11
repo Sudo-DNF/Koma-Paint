@@ -456,12 +456,12 @@ void KomaLineartShape::setCenterline(const QVector<KomaLineartPoint> &points)
     m_centerline = points;
     rebuildOutline();
 
-    // Keep the path's origin at its bounding box without moving the line.
+    // Keep the path's origin at its bounding box. normalize() moves the
+    // shape's transformation to compensate, so the line stays in place.
     const QPointF offset = normalize();
     for (KomaLineartPoint &point : m_centerline) {
         point.position -= offset;
     }
-    setTransformation(QTransform::fromTranslate(offset.x(), offset.y()) * transformation());
     notifyChanged();
 }
 

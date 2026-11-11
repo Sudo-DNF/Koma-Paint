@@ -731,6 +731,7 @@ if (!qEnvironmentVariableIsEmpty("KRITA_OPENGL_DEBUG")) {
                             KAboutLicense::GPL,
                             i18nc("@info:credit", "© 1999–2026 The Krita Developers"));
     aboutData.setHomepage(QStringLiteral("https://krita.org"));
+    aboutData.setDesktopFileName(QStringLiteral("org.komapaint.KomaPaint"));
     aboutData.setOrganizationDomain("krita.org");
 
     // this call sets corresponding fields of QApplication as well

@@ -77,10 +77,12 @@ static bool registerBundledUiFonts()
 
 QFont systemDefaultUiFont()
 {
-    // Koma Paint's UI type: Inter, 13px, medium weight.
+    // Koma Paint's UI type: Inter, 13px (at 96 dpi), medium weight. It is
+    // set in points because Krita widgets derive their sizes from the
+    // point size.
     if (registerBundledUiFonts()) {
         QFont font(QStringLiteral("Inter"));
-        font.setPixelSize(13);
+        font.setPointSizeF(13.0 * 72.0 / 96.0);
         font.setWeight(QFont::Medium);
         return font;
     }
@@ -139,15 +141,15 @@ QFont headingFont(HeadingLevel level)
     QFont font(QStringLiteral("Poppins"));
     switch (level) {
     case HeadingLevel::H1:
-        font.setPixelSize(32);
+        font.setPointSizeF(32.0 * 72.0 / 96.0);
         font.setWeight(QFont::Bold);
         break;
     case HeadingLevel::H2:
-        font.setPixelSize(24);
+        font.setPointSizeF(24.0 * 72.0 / 96.0);
         font.setWeight(QFont::DemiBold);
         break;
     case HeadingLevel::H3:
-        font.setPixelSize(18);
+        font.setPointSizeF(18.0 * 72.0 / 96.0);
         font.setWeight(QFont::DemiBold);
         break;
     }

@@ -20,6 +20,7 @@ private Q_SLOTS:
     void testAdjustWidth();
     void testConnect();
     void testEditTransformedLine();
+    void testNewLineStaysWhereDrawn();
 };
 
 #endif // KOMALINEARTSHAPETEST_H
