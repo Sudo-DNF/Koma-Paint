@@ -171,6 +171,7 @@ set(kritaui_LIB_SRCS
     KisWelcomePageWidget.cpp
     KisUiFont.cpp
     KomaPaintStyle.cpp
+    KomaPaintToolGroups.cpp
     KisIdleTasksManager.cpp
     KisIdleTaskStrokeStrategy.cpp
     KisImageThumbnailStrokeStrategy.cpp

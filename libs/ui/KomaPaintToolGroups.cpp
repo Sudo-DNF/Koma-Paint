@@ -3,11 +3,11 @@
  *
  *  SPDX-License-Identifier: GPL-3.0-or-later
  */
-#include "SubToolGroups.h"
+#include "KomaPaintToolGroups.h"
 
 #include <klocalizedstring.h>
 
-namespace SubToolGroups
+namespace KomaPaintToolGroups
 {
 
 const QStringList &brushToolIds()
@@ -107,6 +107,20 @@ const QStringList &preferredTagOrder()
         QStringLiteral("Erasers"),
     };
     return order;
+}
+
+const ToolGroup &brushGroup()
+{
+    static const ToolGroup group = {QStringLiteral("brush"), i18nc("Sub tool group", "Brush"), brushToolIds()};
+    return group;
+}
+
+const ToolGroup *toolboxGroupForTool(const QString &toolId)
+{
+    if (isBrushTool(toolId)) {
+        return &brushGroup();
+    }
+    return groupForTool(toolId);
 }
 
 }

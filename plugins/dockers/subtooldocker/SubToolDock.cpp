@@ -30,7 +30,7 @@
 #include <kis_favorite_resource_manager.h>
 
 #include "SubToolDelegate.h"
-#include "SubToolGroups.h"
+#include <KomaPaintToolGroups.h>
 
 namespace
 {
@@ -147,7 +147,7 @@ void SubToolDock::slotToolChanged()
 {
     const QString toolId = toolManager() ? toolManager()->activeToolId() : QString();
 
-    if (SubToolGroups::isBrushTool(toolId)) {
+    if (KomaPaintToolGroups::isBrushTool(toolId)) {
         if (m_mode != Mode::Presets) {
             showMode(Mode::Presets);
             rebuildPresetTabs();
@@ -156,7 +156,7 @@ void SubToolDock::slotToolChanged()
         return;
     }
 
-    if (const SubToolGroups::ToolGroup *group = SubToolGroups::groupForTool(toolId)) {
+    if (const KomaPaintToolGroups::ToolGroup *group = KomaPaintToolGroups::groupForTool(toolId)) {
         if (m_mode != Mode::ToolVariants || m_toolGroupId != group->id) {
             showMode(Mode::ToolVariants);
             rebuildToolVariants(group->id);
@@ -215,7 +215,7 @@ void SubToolDock::rebuildPresetTabs()
     }
 
     // Clip Studio style groups first, in their usual order; then the rest.
-    const QStringList &preferred = SubToolGroups::preferredTagOrder();
+    const QStringList &preferred = KomaPaintToolGroups::preferredTagOrder();
     std::stable_sort(tags.begin(), tags.end(), [&preferred](const KisTagSP &a, const KisTagSP &b) {
         const int ia = preferred.indexOf(a->url());
         const int ib = preferred.indexOf(b->url());
@@ -256,8 +256,8 @@ void SubToolDock::rebuildToolVariants(const QString &groupId)
     m_toolGroupId = groupId;
     m_toolModel->clear();
 
-    const SubToolGroups::ToolGroup *group = nullptr;
-    for (const SubToolGroups::ToolGroup &candidate : SubToolGroups::toolGroups()) {
+    const KomaPaintToolGroups::ToolGroup *group = nullptr;
+    for (const KomaPaintToolGroups::ToolGroup &candidate : KomaPaintToolGroups::toolGroups()) {
         if (candidate.id == groupId) {
             group = &candidate;
             break;

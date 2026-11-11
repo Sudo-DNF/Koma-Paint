@@ -142,6 +142,24 @@ QIcon QuickAccessGrid::iconFor(const QuickAccessItem &item) const
     return QIcon();
 }
 
+void QuickAccessGrid::paintEvent(QPaintEvent *event)
+{
+    QListWidget::paintEvent(event);
+    if (count() > 0) {
+        return;
+    }
+
+    // Empty state: say what goes here and how to add it.
+    QPainter painter(viewport());
+    painter.setPen(KomaPaint::themeFor(palette()).textMuted);
+    const QRect area = viewport()->rect().adjusted(KomaPaint::Space::s3, KomaPaint::Space::s3,
+                                                   -KomaPaint::Space::s3, -KomaPaint::Space::s3);
+    painter.drawText(area, Qt::AlignCenter | Qt::TextWordWrap,
+                     i18nc("Quick Access empty state",
+                           "Keep your favourite tools, brushes, colors and commands here. "
+                           "Right-click to add one."));
+}
+
 void QuickAccessGrid::rebuild()
 {
     m_rebuilding = true;

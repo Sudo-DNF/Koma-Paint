@@ -37,6 +37,9 @@ Q_SIGNALS:
     /// Emitted after an item has been used.
     void itemTriggered();
 
+protected:
+    void paintEvent(QPaintEvent *event) override;
+
 private Q_SLOTS:
     void rebuild();
     void slotItemClicked(QListWidgetItem *item);

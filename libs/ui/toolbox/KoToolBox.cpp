@@ -35,6 +35,8 @@
 #include <KisViewManager.h>
 #include <KoCanvasController.h>
 #include <KoShapeLayer.h>
+#include <KomaPaintToolGroups.h>
+#include <QSet>
 
 #define BUTTON_MARGIN 10
 
@@ -75,6 +77,13 @@ public:
     QMap<QAction*,int> contextIconSizes;
     QAction *defaultIconSizeAction {0};
     KoToolManager *toolManager {0};
+
+    /// Tool groups: one button per group (keyed by group id). The button
+    /// activates the group's last used tool; the other tools of the group
+    /// are reached from the Sub Tool panel.
+    QHash<QString, QString> groupRepresentatives;
+    QHash<QString, KoToolBoxButton*> groupButtons;
+    QHash<QString, QString> lastToolInGroup;
 };
 
 void KoToolBox::Private::addSection(Section *section, const QString &name)
@@ -126,6 +135,22 @@ void KoToolBox::setViewManager(KisViewManager *viewManager)
 {
     d->toolManager = viewManager->toolManager();
 
+    // Each group is represented by its first installed tool.
+    QSet<QString> installed;
+    Q_FOREACH (KoToolAction *toolAction, d->toolManager->toolActionList()) {
+        installed.insert(toolAction->id());
+    }
+    QVector<KomaPaintToolGroups::ToolGroup> groups = KomaPaintToolGroups::toolGroups();
+    groups.prepend(KomaPaintToolGroups::brushGroup());
+    for (const KomaPaintToolGroups::ToolGroup &group : groups) {
+        for (const QString &toolId : group.toolIds) {
+            if (installed.contains(toolId)) {
+                d->groupRepresentatives.insert(group.id, toolId);
+                break;
+            }
+        }
+    }
+
     Q_FOREACH (KoToolAction *toolAction, d->toolManager->toolActionList()) {
         addButton(toolAction);
     }
@@ -147,6 +172,10 @@ void KoToolBox::setViewManager(KisViewManager *viewManager)
     Q_FOREACH(KoToolAction *toolAction, d->toolManager->toolActionList()) {
         QAction *toolQAction = actionCollection->action(toolAction->id());
         auto button = d->buttonsByToolId.find(toolAction->id());
+        if (button == d->buttonsByToolId.end() && KomaPaintToolGroups::toolboxGroupForTool(toolAction->id())) {
+            // Grouped tools without a button of their own.
+            continue;
+        }
         if (button == d->buttonsByToolId.end()) {
             qWarning() << "Toolbox is missing button for tool" << toolAction->id();
             continue;
@@ -157,7 +186,33 @@ void KoToolBox::setViewManager(KisViewManager *viewManager)
 
 void KoToolBox::addButton(KoToolAction *toolAction)
 {
+    const KomaPaintToolGroups::ToolGroup *group = KomaPaintToolGroups::toolboxGroupForTool(toolAction->id());
+    if (group) {
+        if (d->groupButtons.contains(group->id)) {
+            return;
+        }
+        const QString representative = d->groupRepresentatives.value(group->id);
+        if (!representative.isEmpty() && representative != toolAction->id()) {
+            return;
+        }
+    }
+
     KoToolBoxButton *button = new KoToolBoxButton(toolAction, this);
+
+    if (group) {
+        const QString groupId = group->id;
+        const QString representative = toolAction->id();
+        d->groupRepresentatives.insert(groupId, representative);
+        d->groupButtons.insert(groupId, button);
+
+        // The group button returns to the group's last used tool.
+        disconnect(button, SIGNAL(clicked(bool)), nullptr, nullptr);
+        connect(button, &QToolButton::clicked, this, [this, groupId, representative]() {
+            if (d->toolManager) {
+                d->toolManager->switchToolRequested(d->lastToolInGroup.value(groupId, representative));
+            }
+        });
+    }
 
     d->buttons << button;
 
@@ -193,6 +248,12 @@ void KoToolBox::setActiveTool(KoCanvasController *canvas)
 
     QString id = d->toolManager->activeToolId();
     KoToolBoxButton *button = d->buttonsByToolId.value(id);
+    if (const KomaPaintToolGroups::ToolGroup *group = KomaPaintToolGroups::toolboxGroupForTool(id)) {
+        d->lastToolInGroup.insert(group->id, id);
+        if (!button) {
+            button = d->groupButtons.value(group->id);
+        }
+    }
     if (button) {
         button->setChecked(true);
         button->setHighlightColor();

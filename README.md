@@ -8,7 +8,7 @@ Development used AI coding assistants; the app itself contains no generative AI 
 
 ## What's different from Krita
 
-- **Koma Studio workspace.** A slim tool strip sits on the far left. Next to it is a left panel with sub tools, tool properties and a colour wheel. The right panel holds the navigator, layers and a colour mixer.
+- **Koma Studio workspace.** A slim tool strip on the far left holds one button per tool group: brush, figure, fill, selection, text, ruler, eyedropper, view and operation. Each button returns to the last tool you used in that group. Next to it is a left panel with sub tools, tool properties and a colour wheel. The right panel holds the navigator, layers and a colour mixer.
 - **Sub Tool panel.** Brush tools show their brushes in groups such as Pencil, Ink, Watercolor, Thick Paint, Gouache, Airbrush, Blend and Decoration, each with a stroke preview. Other tools list their variants. For example, the selection tool holds rectangle, ellipse, lasso, magic wand and more.
 - **Layers panel.** Each row shows the layer's opacity and blending mode above its name. One-click toggles above the list:
   - clip to the layer below;
@@ -25,16 +25,14 @@ Development used AI coding assistants; the app itself contains no generative AI 
   - Ctrl + Alt + drag resizes the brush.
 
   The default keyboard shortcuts follow Clip Studio Paint.
+- **Color mixing.** A paint surface for mixing color by hand: dab with a wet brush, smudge colors together, then pick the mix. It is kept between sessions.
+- **Quick Access.** Press Shift+Q to open your own palette of tools, brushes, colors and commands at the cursor. It is also available as a panel.
+- **Pop-up palette.** Its brush ring follows the group chosen in the Sub Tool panel.
 - **Look and feel.** Dark and light Koma Paint themes use flat panels, rounded controls and the Inter and Poppins typefaces. The pink accent is kept for what matters: the active tool, the primary action and the current selection.
 
 ## Status
 
-Koma Paint is in active development. These are planned next:
-
-- a tactile colour mixing palette;
-- a Quick Access palette and a redesigned pop-up palette;
-- an icon and wording pass;
-- vector lineart layers, where every ink stroke stays editable.
+Koma Paint is in active development. Next up are vector lineart layers, where every ink stroke stays editable. Lines will be adjustable afterwards with vector erasers, control points, line width correction, simplifying and connecting.
 
 Files are saved in Krita's `.kra` format, so documents open in both applications. Draft layers are a Koma Paint addition; Krita keeps them as normal layers.
 
