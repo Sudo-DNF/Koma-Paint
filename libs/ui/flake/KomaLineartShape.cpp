@@ -24,6 +24,25 @@
 #include <SvgStyleWriter.h>
 #include <SvgUtil.h>
 #include <kis_dom_utils.h>
+#include <KisGlobalResourcesInterface.h>
+#include <KisResourceTypes.h>
+#include <KoCanvasResourcesIds.h>
+#include <KoColor.h>
+#include <KoColorSpaceRegistry.h>
+#include <KoLocalStrokeCanvasResources.h>
+#include <brushengine/kis_paint_information.h>
+#include <brushengine/kis_paintop_preset.h>
+#include <brushengine/kis_paintop_settings.h>
+#include <kis_distance_information.h>
+#include <kis_image.h>
+#include <kis_paint_device.h>
+#include <kis_paint_layer.h>
+#include <kis_painter.h>
+#include <brushengine/kis_paintop.h>
+#include <KisRunnableStrokeJobData.h>
+#include <tuple>
+#include <KoCompositeOpRegistry.h>
+#include <QPainter>
 
 namespace
 {
@@ -138,6 +157,10 @@ KomaLineartShape::KomaLineartShape(const KomaLineartShape &rhs)
     : KoPathShape(rhs)
     , SvgShape()
     , m_centerline(rhs.m_centerline)
+    , m_brush(rhs.m_brush)
+    , m_brushName(rhs.m_brushName)
+    , m_brushMd5(rhs.m_brushMd5)
+    , m_fullPressureWidth(rhs.m_fullPressureWidth)
 {
 }
 
@@ -163,6 +186,169 @@ const QVector<KomaLineartPoint> &KomaLineartShape::centerline() const
 void KomaLineartShape::setLineColor(const QColor &color)
 {
     setBackground(QSharedPointer<KoShapeBackground>(new KoColorBackground(color)));
+}
+
+void KomaLineartShape::setBackground(QSharedPointer<KoShapeBackground> background)
+{
+    KoPathShape::setBackground(background);
+    invalidateRender();
+}
+
+void KomaLineartShape::setBrush(KisPaintOpPresetSP preset, qreal fullPressureWidth)
+{
+    m_brush = preset;
+    m_brushName = preset ? preset->name() : QString();
+    m_brushMd5 = preset ? preset->md5Sum() : QString();
+    m_fullPressureWidth = qMax(fullPressureWidth, minimumWidth);
+    invalidateRender();
+    update();
+}
+
+KisPaintOpPresetSP KomaLineartShape::brush() const
+{
+    return m_brush;
+}
+
+qreal KomaLineartShape::fullPressureWidth() const
+{
+    return m_fullPressureWidth;
+}
+
+KisPaintOpPresetSP KomaLineartShape::brushSnapshot(KisPaintOpPresetSP preset, const QColor &color)
+{
+    if (!preset) {
+        return KisPaintOpPresetSP();
+    }
+    // Presets may read canvas resources such as the foreground colour.
+    KoLocalStrokeCanvasResourcesSP canvasResources(new KoLocalStrokeCanvasResources());
+    canvasResources->storeResource(KoCanvasResource::ForegroundColor,
+                                   QVariant::fromValue(KoColor(color, KoColorSpaceRegistry::instance()->rgb8())));
+    canvasResources->storeResource(KoCanvasResource::BackgroundColor,
+                                   QVariant::fromValue(KoColor(Qt::white, KoColorSpaceRegistry::instance()->rgb8())));
+    return preset->cloneWithResourcesSnapshot(KisGlobalResourcesInterface::instance(), canvasResources, nullptr);
+}
+
+void KomaLineartShape::invalidateRender()
+{
+    QMutexLocker locker(&m_renderMutex);
+    m_render = QImage();
+    m_renderScale = 0.0;
+}
+
+QRectF KomaLineartShape::boundingRect() const
+{
+    QRectF bounds = KoPathShape::boundingRect();
+    if (m_brush) {
+        // Brush tips and textures can reach a little past the outline.
+        const QTransform toDocument = absoluteTransformation();
+        const qreal margin = m_fullPressureWidth * 0.5 * qSqrt(qAbs(toDocument.determinant()));
+        bounds.adjust(-margin, -margin, margin, margin);
+    }
+    return bounds;
+}
+
+void KomaLineartShape::paint(QPainter &painter) const
+{
+    if (!m_brush || m_centerline.isEmpty()) {
+        KoPathShape::paint(painter);
+        return;
+    }
+
+    const qreal scale = qSqrt(qAbs(painter.transform().determinant()));
+    if (scale <= 0) {
+        return;
+    }
+
+    QImage image;
+    QRectF rect;
+    {
+        QMutexLocker locker(&m_renderMutex);
+        if (m_render.isNull() || !qFuzzyCompare(m_renderScale, scale)) {
+            m_render = renderWithBrush(scale, &m_renderRect);
+            m_renderScale = scale;
+        }
+        image = m_render;
+        rect = m_renderRect;
+    }
+
+    if (image.isNull()) {
+        KoPathShape::paint(painter);
+        return;
+    }
+    painter.save();
+    painter.setRenderHint(QPainter::SmoothPixmapTransform);
+    painter.drawImage(rect, image);
+    painter.restore();
+}
+
+QImage KomaLineartShape::renderWithBrush(qreal scale, QRectF *localRect) const
+{
+    const qreal margin = m_fullPressureWidth * 0.75 + 2.0 / scale;
+    const QRectF bounds = outline().boundingRect().adjusted(-margin, -margin, margin, margin);
+
+    // Keep very large or very zoomed renders within a sane size.
+    constexpr qreal maximumPixels = 4096.0 * 4096.0;
+    qreal renderScale = scale;
+    const qreal pixels = bounds.width() * bounds.height() * renderScale * renderScale;
+    if (pixels > maximumPixels) {
+        renderScale *= qSqrt(maximumPixels / pixels);
+    }
+
+    const int width = qMax(1, qCeil(bounds.width() * renderScale));
+    const int height = qMax(1, qCeil(bounds.height() * renderScale));
+
+    const KoColorSpace *colorSpace = KoColorSpaceRegistry::instance()->rgb8();
+    KisImageSP image = new KisImage(nullptr, width, height, colorSpace, QStringLiteral("lineart"));
+    KisPaintLayerSP layer = new KisPaintLayer(image, QStringLiteral("lineart"), OPACITY_OPAQUE_U8, colorSpace);
+    KisPaintDeviceSP device = layer->paintDevice();
+
+    KisPaintOpPresetSP preset = m_brush->clone().dynamicCast<KisPaintOpPreset>();
+    if (!preset || !preset->settings()) {
+        return QImage();
+    }
+    preset->settings()->setPaintOpSize(m_fullPressureWidth * renderScale);
+
+    KisPainter brushPainter(device);
+    brushPainter.setPaintColor(KoColor(lineColor(), colorSpace));
+    brushPainter.setBackgroundColor(KoColor(Qt::white, colorSpace));
+    brushPainter.setCompositeOpId(COMPOSITE_OVER);
+    brushPainter.setOpacityF(preset->settings()->paintOpOpacity());
+    brushPainter.setPaintOpPreset(preset, layer, image);
+    if (!brushPainter.paintOp()) {
+        return QImage();
+    }
+
+    // Widths map back to the pen pressure the line was drawn with.
+    auto paintInfo = [&](const KomaLineartPoint &point) {
+        const qreal share = point.width / m_fullPressureWidth;
+        const qreal pressure = qBound(0.0, (share - minimumPressureShare) / (1.0 - minimumPressureShare), 1.0);
+        return KisPaintInformation((point.position - bounds.topLeft()) * renderScale, pressure);
+    };
+
+    const QVector<KomaLineartPoint> dense = densify(m_centerline, qMax(0.5 / renderScale, minimumWidth));
+    KisDistanceInformation distance;
+    brushPainter.paintAt(paintInfo(dense.first()), &distance);
+    for (int i = 1; i < dense.size(); ++i) {
+        brushPainter.paintLine(paintInfo(dense[i - 1]), paintInfo(dense[i]), &distance);
+    }
+
+    // Brush engines may render their dabs asynchronously; run the pending
+    // jobs here until the engine has nothing left to do.
+    for (int round = 0; round < 10000; ++round) {
+        QVector<KisRunnableStrokeJobData*> jobs;
+        bool needsMoreUpdates = false;
+        std::tie(std::ignore, needsMoreUpdates) = brushPainter.paintOp()->doAsynchronousUpdate(jobs);
+        for (KisRunnableStrokeJobData *job : jobs) {
+            job->run();
+            delete job;
+        }
+        if (jobs.isEmpty() && !needsMoreUpdates) {
+            break;
+        }
+    }
+
+    *localRect = QRectF(bounds.topLeft(), QSizeF(width, height) / renderScale);
+    return device->convertToQImage(nullptr, 0, 0, width, height);
 }
 
 QColor KomaLineartShape::lineColor() const
@@ -447,6 +633,7 @@ QVector<QVector<KomaLineartPoint>> KomaLineartShape::eraseUpToIntersection(const
 
 void KomaLineartShape::rebuildOutline()
 {
+    invalidateRender();
     clear();
     appendPainterPath(this, outlineForCenterline(m_centerline));
 }
@@ -597,6 +784,11 @@ bool KomaLineartShape::saveSvg(SvgSavingContext &context)
     SvgStyleWriter::saveSvgStyle(this, context);
     context.shapeWriter().addAttribute("d", toString(userSpace));
     context.shapeWriter().addAttribute(lineartAttribute.toLatin1().constData(), encoded.join(QLatin1Char(';')));
+    if (m_brush) {
+        context.shapeWriter().addAttribute("krita:lineart-brush", m_brushName);
+        context.shapeWriter().addAttribute("krita:lineart-brush-md5", m_brushMd5);
+        context.shapeWriter().addAttribute("krita:lineart-full-width", KisDomUtils::toString(m_fullPressureWidth * widthScale));
+    }
     SvgStyleWriter::saveMetadata(this, context);
     context.shapeWriter().endElement();
     return true;
@@ -622,6 +814,24 @@ bool KomaLineartShape::loadSvg(const QDomElement &element, SvgLoadingContext &co
     }
     if (points.isEmpty()) {
         return false;
+    }
+
+    // The brush is looked up by MD5 (then name); without it the line is
+    // drawn as a solid fill.
+    const QString brushName = element.attribute("krita:lineart-brush");
+    const QString brushMd5 = element.attribute("krita:lineart-brush-md5");
+    if (!brushName.isEmpty() || !brushMd5.isEmpty()) {
+        KisPaintOpPresetSP preset = KisGlobalResourcesInterface::instance()
+                ->source<KisPaintOpPreset>(ResourceType::PaintOpPresets)
+                .bestMatch(brushMd5, QString(), brushName);
+        const qreal fullWidth = SvgUtil::fromUserSpace(
+                    KisDomUtils::toDouble(element.attribute("krita:lineart-full-width", "1")));
+        m_fullPressureWidth = qMax(fullWidth, minimumWidth);
+        m_brushName = brushName;
+        m_brushMd5 = brushMd5;
+        if (preset) {
+            m_brush = brushSnapshot(preset, Qt::black);
+        }
     }
 
     // Same placement as an ordinary path: the parser applies the element's

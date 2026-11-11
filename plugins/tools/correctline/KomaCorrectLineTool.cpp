@@ -343,6 +343,8 @@ void KomaCorrectLineTool::finishConnect(const QPointF &documentPoint)
     connected->setLineColor(from.line->lineColor());
     connected->setZIndex(qMax(from.line->zIndex(), to.line->zIndex()));
     connected->setCenterlineInDocument(joined);
+    connected->setBrush(from.line->brush(),
+                        from.line->fullPressureWidth() * qSqrt(qAbs(from.line->absoluteTransformation().determinant())));
     canvas()->shapeController()->removeShapes({from.line, to.line}, command);
     canvas()->shapeController()->addShape(connected, layer, command);
     canvas()->addCommand(command);

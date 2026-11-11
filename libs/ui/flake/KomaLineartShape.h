@@ -7,6 +7,8 @@
 #define KOMALINEARTSHAPE_H
 
 #include <QColor>
+#include <QImage>
+#include <QMutex>
 #include <QPainterPath>
 #include <QPointF>
 #include <QVector>
@@ -15,6 +17,7 @@
 #include <KoShapeFactoryBase.h>
 #include <SvgShape.h>
 #include <kundo2command.h>
+#include <kis_types.h>
 
 #include "kritaui_export.h"
 
@@ -44,8 +47,14 @@ struct KomaLineartPoint {
  * export, while the line itself stays editable: it can be re-widened,
  * split, erased up to an intersection or simplified later.
  *
+ * When the line knows the brush it was drawn with, it is rendered with
+ * that brush (tip, texture, opacity) along its centerline, using the
+ * stored widths as pen pressure, so pencils and textured brushes look the
+ * same as on a paint layer. Without a brush it is drawn as a solid fill.
+ *
  * In SVG the stroke is a normal filled path (any SVG reader can display
- * it) with the centerline stored in a "krita:lineart" attribute.
+ * it) with the centerline stored in a "krita:lineart" attribute and the
+ * brush referenced by name and MD5.
  */
 class KRITAUI_EXPORT KomaLineartShape : public KoPathShape, public SvgShape
 {
@@ -78,11 +87,40 @@ public:
      */
     void setCenterlineFromDocument(const QVector<KomaLineartPoint> &points);
 
+    /**
+     * Share of the full width a line keeps at the lightest pen pressure.
+     * Widths map back to pen pressure with it when the line is rendered
+     * with its brush.
+     */
+    static constexpr qreal minimumPressureShare = 0.15;
+
     /// Restores a centerline and transformation saved earlier (for undo).
     void restoreState(const QVector<KomaLineartPoint> &centerline, const QTransform &transformation);
 
     void setLineColor(const QColor &color);
     QColor lineColor() const;
+
+    /**
+     * Sets the brush the line is rendered with.
+     * @param preset a resource snapshot of the brush, safe to use from any
+     *        thread, or null to draw the line as a solid fill.
+     * @param fullPressureWidth the line width at full pen pressure, in
+     *        shape units; widths along the line are relative to it.
+     */
+    void setBrush(KisPaintOpPresetSP preset, qreal fullPressureWidth);
+    KisPaintOpPresetSP brush() const;
+    qreal fullPressureWidth() const;
+
+    /**
+     * Makes a thread-safe snapshot of @p preset for rendering lineart in
+     * @p color (presets may read the foreground colour).
+     */
+    static KisPaintOpPresetSP brushSnapshot(KisPaintOpPresetSP preset, const QColor &color);
+
+    // KoShape
+    void setBackground(QSharedPointer<KoShapeBackground> background) override;
+    void paint(QPainter &painter) const override;
+    QRectF boundingRect() const override;
 
     /**
      * Builds the filled outline of a variable-width line through @p points:
@@ -148,8 +186,21 @@ public:
 
 private:
     void rebuildOutline();
+    void invalidateRender();
+    /// Renders the line with its brush at @p scale device pixels per shape unit.
+    QImage renderWithBrush(qreal scale, QRectF *localRect) const;
 
     QVector<KomaLineartPoint> m_centerline;
+
+    KisPaintOpPresetSP m_brush;
+    QString m_brushName;
+    QString m_brushMd5;
+    qreal m_fullPressureWidth {1.0};
+
+    mutable QMutex m_renderMutex;
+    mutable QImage m_render;
+    mutable QRectF m_renderRect;   ///< Shape coordinates the render covers.
+    mutable qreal m_renderScale {0.0};
 };
 
 /**

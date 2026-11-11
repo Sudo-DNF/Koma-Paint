@@ -7,6 +7,7 @@
 
 #include <QHash>
 #include <QPainter>
+#include <QtMath>
 #include <QPainterPathStroker>
 
 #include <kis_config.h>
@@ -27,8 +28,6 @@
 
 namespace
 {
-/// Share of the full width kept at the lightest pressure.
-constexpr qreal minimumPressureWidth = 0.15;
 
 /// Simplification tolerance, in image pixels.
 constexpr qreal simplifyTolerancePixels = 0.35;
@@ -59,7 +58,8 @@ bool KomaLineartRecorder::isActive() const
 qreal KomaLineartRecorder::widthForPressure(qreal pressure) const
 {
     const qreal p = qBound(0.0, pressure, 1.0);
-    return m_baseWidth * (minimumPressureWidth + (1.0 - minimumPressureWidth) * p);
+    return m_baseWidth * (KomaLineartShape::minimumPressureShare
+                          + (1.0 - KomaLineartShape::minimumPressureShare) * p);
 }
 
 bool KomaLineartRecorder::begin(KisCanvas2 *canvas, KisShapeLayer *layer, const QPointF &documentPoint,
@@ -90,6 +90,8 @@ bool KomaLineartRecorder::begin(KisCanvas2 *canvas, KisShapeLayer *layer, const 
     m_eraserRadius = m_baseWidth / 2.0;
     m_color = canvas->resourceManager()->foregroundColor().toQColor();
     m_color.setAlpha(255);
+    // New lines are rendered with the brush they are drawn with.
+    m_brush = erase ? KisPaintOpPresetSP() : KomaLineartShape::brushSnapshot(preset, m_color);
 
     m_active = true;
     add(documentPoint, pressure);
@@ -173,6 +175,7 @@ void KomaLineartRecorder::finish()
             KomaLineartShape *line = new KomaLineartShape();
             line->setLineColor(m_color);
             line->setCenterlineInDocument(centerline);
+            line->setBrush(m_brush, m_baseWidth);
 
             KUndo2Command *command = m_canvas->shapeController()->addShape(line, m_layer);
             command->setText(kundo2_i18n("Draw Line"));
@@ -244,6 +247,7 @@ void KomaLineartRecorder::applyPartialErase(KUndo2Command *parent)
             remaining->setLineColor(line->lineColor());
             remaining->setZIndex(line->zIndex());
             remaining->setCenterlineInDocument(KomaLineartShape::simplify(piece, tolerance));
+            remaining->setBrush(line->brush(), line->fullPressureWidth() * qSqrt(qAbs(line->absoluteTransformation().determinant())));
             m_canvas->shapeController()->addShape(remaining, m_layer, parent);
         }
     }

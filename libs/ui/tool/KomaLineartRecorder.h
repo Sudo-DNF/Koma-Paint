@@ -76,6 +76,7 @@ private:
 
     qreal m_baseWidth {1.0};   ///< Line width at full pressure, document units.
     QColor m_color;
+    KisPaintOpPresetSP m_brush;  ///< Snapshot of the brush, for rendering.
     QVector<KomaLineartPoint> m_raw;
     QPainterPath m_preview;     ///< Outline of the stroke so far, document units.
 
