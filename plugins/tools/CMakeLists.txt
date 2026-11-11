@@ -12,6 +12,7 @@ add_subdirectory( tool_smart_patch )
 add_subdirectory( svgtexttool )
 add_subdirectory( tool_enclose_and_fill )
 add_subdirectory( tool_knife )
+add_subdirectory( correctline )
 
 
 install( FILES

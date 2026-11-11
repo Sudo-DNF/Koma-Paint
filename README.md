@@ -39,7 +39,12 @@ Koma Paint is in active development. Vector lineart is arriving in steps:
   - erase the touched area;
   - erase up to intersection: clean up overshoots where lines cross;
   - erase whole line.
-- **Next:** control points, line width correction, simplifying and connecting lines.
+- **Correct Line:** a toolbox group whose sub tools edit lines after drawing:
+  - **Control Point:** drag a point to reshape a line; Shift+click a point to delete it.
+  - **Adjust Line Width:** brush over lines to thicken or narrow them.
+  - **Simplify Line:** smooth lines and remove extra points.
+  - **Connect Lines:** drag from one line end to another to join them.
+- **Next:** pinch and redraw tools, snapping to control points, erasing across all vector layers, and converting raster lineart to vector.
 
 Lineart lines are saved in `.kra` files and export to SVG as ordinary filled paths.
 

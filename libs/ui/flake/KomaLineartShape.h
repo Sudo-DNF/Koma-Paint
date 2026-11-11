@@ -14,6 +14,7 @@
 #include <KoPathShape.h>
 #include <KoShapeFactoryBase.h>
 #include <SvgShape.h>
+#include <kundo2command.h>
 
 #include "kritaui_export.h"
 
@@ -71,6 +72,15 @@ public:
     /// The centerline mapped to document coordinates.
     QVector<KomaLineartPoint> centerlineInDocument() const;
 
+    /**
+     * Replaces the centerline with one given in document coordinates,
+     * keeping the shape's transformation (rotation, scale) as it is.
+     */
+    void setCenterlineFromDocument(const QVector<KomaLineartPoint> &points);
+
+    /// Restores a centerline and transformation saved earlier (for undo).
+    void restoreState(const QVector<KomaLineartPoint> &centerline, const QTransform &transformation);
+
     void setLineColor(const QColor &color);
     QColor lineColor() const;
 
@@ -116,6 +126,22 @@ public:
                                                                    qreal eraserRadius,
                                                                    const QVector<QVector<QPointF>> &otherLines);
 
+    /**
+     * Scales the width of a (densified) line around @p center: points
+     * within @p radius are multiplied by @p factor, fading to no change at
+     * the edge. Widths never go below a hairline.
+     */
+    static QVector<KomaLineartPoint> adjustWidth(const QVector<KomaLineartPoint> &dense,
+                                                 const QPointF &center, qreal radius, qreal factor);
+
+    /**
+     * Joins two lines into one: @p first runs into @p second. @p firstAtEnd
+     * says whether the first line is joined at its end (otherwise its start
+     * is, and it is reversed); @p secondAtStart likewise for the second.
+     */
+    static QVector<KomaLineartPoint> connect(const QVector<KomaLineartPoint> &first, bool firstAtEnd,
+                                             const QVector<KomaLineartPoint> &second, bool secondAtStart);
+
     // SvgShape
     bool saveSvg(SvgSavingContext &context) override;
     bool loadSvg(const QDomElement &element, SvgLoadingContext &context) override;
@@ -137,6 +163,29 @@ public:
 
     KoShape *createDefaultShape(KoDocumentResourceManager *documentResources = nullptr) const override;
     bool supports(const QDomElement &element, KoShapeLoadingContext &context) const override;
+};
+
+/**
+ * Undoable change of a lineart stroke's centerline (and the transformation
+ * that comes with it).
+ */
+class KRITAUI_EXPORT KomaLineartEditCommand : public KUndo2Command
+{
+public:
+    KomaLineartEditCommand(KomaLineartShape *shape,
+                           const QVector<KomaLineartPoint> &oldCenterline, const QTransform &oldTransformation,
+                           const QVector<KomaLineartPoint> &newCenterline, const QTransform &newTransformation,
+                           const KUndo2MagicString &text, KUndo2Command *parent = nullptr);
+
+    void redo() override;
+    void undo() override;
+
+private:
+    KomaLineartShape *m_shape;
+    QVector<KomaLineartPoint> m_oldCenterline;
+    QTransform m_oldTransformation;
+    QVector<KomaLineartPoint> m_newCenterline;
+    QTransform m_newTransformation;
 };
 
 #endif // KOMALINEARTSHAPE_H

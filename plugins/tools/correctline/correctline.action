@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ActionCollection version="2" name="Tools">
+  <Actions category="tool-shortcuts">
+    <text>Correct Line</text>
+    <Action name="KomaCorrectLineControlPoint">
+      <icon>pathpoint-curve</icon>
+      <text>Control Point</text>
+      <whatsThis></whatsThis>
+      <toolTip>Reshape lineart by dragging its points</toolTip>
+      <iconText>Control Point</iconText>
+      <shortcut></shortcut>
+      <isCheckable>true</isCheckable>
+      <statusTip></statusTip>
+    </Action>
+    <Action name="KomaCorrectLineWidth">
+      <icon>calligraphy_increase_width</icon>
+      <text>Adjust Line Width</text>
+      <whatsThis></whatsThis>
+      <toolTip>Thicken or narrow lineart</toolTip>
+      <iconText>Adjust Line Width</iconText>
+      <shortcut></shortcut>
+      <isCheckable>true</isCheckable>
+      <statusTip></statusTip>
+    </Action>
+    <Action name="KomaCorrectLineSimplify">
+      <icon>interpolation_bezier</icon>
+      <text>Simplify Line</text>
+      <whatsThis></whatsThis>
+      <toolTip>Smooth lineart and remove extra points</toolTip>
+      <iconText>Simplify Line</iconText>
+      <shortcut></shortcut>
+      <isCheckable>true</isCheckable>
+      <statusTip></statusTip>
+    </Action>
+    <Action name="KomaCorrectLineConnect">
+      <icon>pathpoint-join</icon>
+      <text>Connect Lines</text>
+      <whatsThis></whatsThis>
+      <toolTip>Join two lineart strokes</toolTip>
+      <iconText>Connect Lines</iconText>
+      <shortcut></shortcut>
+      <isCheckable>true</isCheckable>
+      <statusTip></statusTip>
+    </Action>
+  </Actions>
+</ActionCollection>

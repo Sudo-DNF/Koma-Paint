@@ -483,6 +483,99 @@ QVector<KomaLineartPoint> KomaLineartShape::centerlineInDocument() const
     return result;
 }
 
+void KomaLineartShape::setCenterlineFromDocument(const QVector<KomaLineartPoint> &points)
+{
+    const QTransform toDocument = absoluteTransformation();
+    const QTransform toShape = toDocument.inverted();
+    const qreal scale = qSqrt(qAbs(toDocument.determinant()));
+    const qreal widthToShape = scale > 0 ? 1.0 / scale : 1.0;
+
+    QVector<KomaLineartPoint> local;
+    local.reserve(points.size());
+    for (const KomaLineartPoint &point : points) {
+        local.append({toShape.map(point.position), point.width * widthToShape});
+    }
+    update();
+    setCenterline(local);
+    update();
+}
+
+void KomaLineartShape::restoreState(const QVector<KomaLineartPoint> &centerline, const QTransform &transformation)
+{
+    update();
+    m_centerline = centerline;
+    rebuildOutline();
+    // The saved centerline is already normalized, so this keeps it in place.
+    const QPointF offset = normalize();
+    for (KomaLineartPoint &point : m_centerline) {
+        point.position -= offset;
+    }
+    setTransformation(QTransform::fromTranslate(offset.x(), offset.y()) * transformation);
+    notifyChanged();
+    update();
+}
+
+QVector<KomaLineartPoint> KomaLineartShape::adjustWidth(const QVector<KomaLineartPoint> &dense,
+                                                        const QPointF &center, qreal radius, qreal factor)
+{
+    QVector<KomaLineartPoint> result = dense;
+    if (radius <= 0) {
+        return result;
+    }
+    for (KomaLineartPoint &point : result) {
+        const QPointF d = point.position - center;
+        const qreal distance = qSqrt(d.x() * d.x() + d.y() * d.y());
+        if (distance >= radius) {
+            continue;
+        }
+        // Smooth falloff: full effect at the centre, none at the edge.
+        const qreal t = distance / radius;
+        const qreal weight = 1.0 - t * t * (3.0 - 2.0 * t);
+        point.width = qMax(minimumWidth, point.width * (1.0 + (factor - 1.0) * weight));
+    }
+    return result;
+}
+
+QVector<KomaLineartPoint> KomaLineartShape::connect(const QVector<KomaLineartPoint> &first, bool firstAtEnd,
+                                                    const QVector<KomaLineartPoint> &second, bool secondAtStart)
+{
+    QVector<KomaLineartPoint> joined = first;
+    if (!firstAtEnd) {
+        std::reverse(joined.begin(), joined.end());
+    }
+    QVector<KomaLineartPoint> tail = second;
+    if (!secondAtStart) {
+        std::reverse(tail.begin(), tail.end());
+    }
+    joined += tail;
+    return joined;
+}
+
+KomaLineartEditCommand::KomaLineartEditCommand(KomaLineartShape *shape,
+                                               const QVector<KomaLineartPoint> &oldCenterline, const QTransform &oldTransformation,
+                                               const QVector<KomaLineartPoint> &newCenterline, const QTransform &newTransformation,
+                                               const KUndo2MagicString &text, KUndo2Command *parent)
+    : KUndo2Command(text, parent)
+    , m_shape(shape)
+    , m_oldCenterline(oldCenterline)
+    , m_oldTransformation(oldTransformation)
+    , m_newCenterline(newCenterline)
+    , m_newTransformation(newTransformation)
+{
+}
+
+void KomaLineartEditCommand::redo()
+{
+    KUndo2Command::redo();
+    m_shape->restoreState(m_newCenterline, m_newTransformation);
+}
+
+void KomaLineartEditCommand::undo()
+{
+    KUndo2Command::undo();
+    m_shape->restoreState(m_oldCenterline, m_oldTransformation);
+}
+
 bool KomaLineartShape::saveSvg(SvgSavingContext &context)
 {
     const QTransform userSpace = context.userSpaceTransform();

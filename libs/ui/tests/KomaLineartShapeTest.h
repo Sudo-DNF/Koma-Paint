@@ -17,6 +17,9 @@ private Q_SLOTS:
     void testEraseTouchedArea();
     void testEraseUpToIntersection();
     void testEraseUpToIntersectionWithoutCrossings();
+    void testAdjustWidth();
+    void testConnect();
+    void testEditTransformedLine();
 };
 
 #endif // KOMALINEARTSHAPETEST_H

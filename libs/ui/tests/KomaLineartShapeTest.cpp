@@ -72,4 +72,60 @@ void KomaLineartShapeTest::testEraseUpToIntersectionWithoutCrossings()
     QVERIFY(pieces.isEmpty());
 }
 
+void KomaLineartShapeTest::testAdjustWidth()
+{
+    const QVector<KomaLineartPoint> dense = KomaLineartShape::densify(straightLine(), 1.0);
+    const int middle = dense.size() / 2;
+
+    const auto wider = KomaLineartShape::adjustWidth(dense, QPointF(50, 0), 10.0, 2.0);
+    QVERIFY(wider[middle].width > 3.9);
+    QCOMPARE(wider.first().width, 2.0);
+
+    const auto thinner = KomaLineartShape::adjustWidth(dense, QPointF(50, 0), 10.0, 0.001);
+    QVERIFY(thinner[middle].width > 0.0);
+    QVERIFY(thinner[middle].width < 0.1);
+}
+
+void KomaLineartShapeTest::testConnect()
+{
+    const QVector<KomaLineartPoint> first = {{QPointF(0, 0), 1}, {QPointF(10, 0), 1}};
+    const QVector<KomaLineartPoint> second = {{QPointF(30, 0), 3}, {QPointF(20, 0), 3}};
+    const auto joined = KomaLineartShape::connect(first, true, second, false);
+    QCOMPARE(joined.size(), 4);
+    QCOMPARE(joined[0].position, QPointF(0, 0));
+    QCOMPARE(joined[2].position, QPointF(20, 0));
+    QCOMPARE(joined[3].position, QPointF(30, 0));
+}
+
+void KomaLineartShapeTest::testEditTransformedLine()
+{
+    KomaLineartShape shape;
+    shape.setCenterlineInDocument({{QPointF(10, 10), 2}, {QPointF(60, 10), 2}});
+    QTransform rotateAndScale;
+    rotateAndScale.rotate(30);
+    rotateAndScale.scale(2, 2);
+    shape.setTransformation(shape.transformation() * rotateAndScale);
+
+    const auto before = shape.centerlineInDocument();
+    const auto oldCenterline = shape.centerline();
+    const QTransform oldTransformation = shape.transformation();
+
+    auto edited = before;
+    edited[1].position += QPointF(5, 7);
+    edited[1].width = 9;
+    shape.setCenterlineFromDocument(edited);
+
+    const auto after = shape.centerlineInDocument();
+    QVERIFY((after[1].position - edited[1].position).manhattanLength() < 1e-3);
+    QVERIFY(qAbs(after[1].width - 9) < 1e-3);
+    QVERIFY((after[0].position - before[0].position).manhattanLength() < 1e-3);
+
+    KomaLineartEditCommand command(&shape, oldCenterline, oldTransformation,
+                                   shape.centerline(), shape.transformation(), kundo2_noi18n("edit"));
+    command.undo();
+    QVERIFY((shape.centerlineInDocument()[1].position - before[1].position).manhattanLength() < 1e-3);
+    command.redo();
+    QVERIFY((shape.centerlineInDocument()[1].position - edited[1].position).manhattanLength() < 1e-3);
+}
+
 SIMPLE_TEST_MAIN(KomaLineartShapeTest)

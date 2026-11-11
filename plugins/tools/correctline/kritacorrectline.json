@@ -1,0 +1,9 @@
+{
+    "Id": "Correct Line Tools",
+    "Type": "Service",
+    "X-KDE-Library": "kritacorrectline",
+    "X-KDE-ServiceTypes": [
+        "Krita/Tool"
+    ],
+    "X-Krita-Version": "28"
+}
