@@ -9,5 +9,9 @@
         <file>Inter-Medium.ttf</file>
         <file>Inter-SemiBold.ttf</file>
         <file>Inter-Bold.ttf</file>
+        <file>Poppins-Regular.ttf</file>
+        <file>Poppins-Medium.ttf</file>
+        <file>Poppins-SemiBold.ttf</file>
+        <file>Poppins-Bold.ttf</file>
     </qresource>
 </RCC>

@@ -53,6 +53,7 @@
 #include <kis_debug.h>
 
 #include <KomaPaintTokens.h>
+#include "KisUiFont.h"
 #include <QDir>
 
 #include <array>
@@ -134,6 +135,12 @@ KisWelcomePageWidget::KisWelcomePageWidget(QWidget *parent)
     m_logo->setFixedSize(176, 40);
     verticalLayout_4->insertWidget(0, m_logo, 0, Qt::AlignLeft);
     verticalLayout_4->insertSpacing(1, KomaPaint::Space::s5);
+
+    // Section titles use the H2 heading style.
+    const QFont sectionFont = KisUiFont::headingFont(KisUiFont::HeadingLevel::H2);
+    startTitleLabel->setFont(sectionFont);
+    recentDocumentsLabel->setFont(sectionFont);
+    helpTitleLabel->setFont(sectionFont);
 
     // The news column shows the krita.org feed, which is not Koma Paint news.
     widgetRight->setVisible(false);

@@ -48,7 +48,7 @@ static QFont windowsSystemUiFont();
 #endif
 
 /**
- * @brief Registers the Inter faces bundled in the application resources.
+ * @brief Registers the Inter and Poppins faces bundled in the application resources.
  * @return true when the Koma Paint UI typeface is available.
  */
 static bool registerBundledUiFonts()
@@ -59,6 +59,10 @@ static bool registerBundledUiFonts()
             QStringLiteral(":/uifonts/Inter-Medium.ttf"),
             QStringLiteral(":/uifonts/Inter-SemiBold.ttf"),
             QStringLiteral(":/uifonts/Inter-Bold.ttf"),
+            QStringLiteral(":/uifonts/Poppins-Regular.ttf"),
+            QStringLiteral(":/uifonts/Poppins-Medium.ttf"),
+            QStringLiteral(":/uifonts/Poppins-SemiBold.ttf"),
+            QStringLiteral(":/uifonts/Poppins-Bold.ttf"),
         };
         bool any = false;
         for (const QString &face : faces) {
@@ -124,6 +128,29 @@ QFont normalFont()
     //      which makes some UI text extremely blurry on CJK systems.
     font.setHintingPreference(QFont::PreferFullHinting);
 #endif
+    return font;
+}
+
+QFont headingFont(HeadingLevel level)
+{
+    registerBundledUiFonts();
+
+    // Poppins type scale from the Koma Paint design system.
+    QFont font(QStringLiteral("Poppins"));
+    switch (level) {
+    case HeadingLevel::H1:
+        font.setPixelSize(32);
+        font.setWeight(QFont::Bold);
+        break;
+    case HeadingLevel::H2:
+        font.setPixelSize(24);
+        font.setWeight(QFont::DemiBold);
+        break;
+    case HeadingLevel::H3:
+        font.setPixelSize(18);
+        font.setWeight(QFont::DemiBold);
+        break;
+    }
     return font;
 }
 

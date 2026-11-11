@@ -1,3 +1,15 @@
+# Koma Paint
+
+Koma Paint is a digital painting and comic studio with a workspace inspired by how illustrators work.
+
+Koma Paint is based on Krita. It is not affiliated with or endorsed by the Krita Foundation.
+
+Development used AI coding assistants; the app itself contains no generative AI features or MCP support.
+
+---
+
+## Upstream Krita
+
 ![Picture](https://krita.org/images/krita-logo-light.svg)
 
 | CI Name     | Master | Stable | Release |

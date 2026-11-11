@@ -26,6 +26,19 @@ KRITAUI_EXPORT QFont normalFont();
  */
 KRITAUI_EXPORT QFont dockFont();
 
+/// Heading levels from the Koma Paint type scale.
+enum class HeadingLevel {
+    H1, ///< Page titles: Poppins 32px bold.
+    H2, ///< Section titles: Poppins 24px semibold.
+    H3, ///< Card and dialog titles: Poppins 18px semibold.
+};
+
+/**
+ * @brief Gets the Poppins heading font for a level of the type scale.
+ * @return the heading font.
+ */
+KRITAUI_EXPORT QFont headingFont(HeadingLevel level);
+
 } // namespace KisUiFont
 
 #endif // KIS_UI_FONT_H
