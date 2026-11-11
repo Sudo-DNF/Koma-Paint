@@ -27,6 +27,7 @@
 #include <kis_config.h>
 #include <kis_icon_utils.h>
 #include <kis_paintop_box.h>
+#include <kis_favorite_resource_manager.h>
 
 #include "SubToolDelegate.h"
 #include "SubToolGroups.h"
@@ -314,6 +315,13 @@ void SubToolDock::slotTabChanged(int index)
     const KisTagSP tag = m_tabTags[index];
     m_presetModel->setTagFilter(tag);
     KisConfig(false).writeEntry(lastPresetTagKey, tag->url());
+
+    // The pop-up palette's brush ring shows the same sub tool group.
+    if (m_canvas && m_canvas->viewManager() && m_canvas->viewManager()->paintOpBox()) {
+        if (KisFavoriteResourceManager *favorites = m_canvas->viewManager()->paintOpBox()->favoriteResourcesManager()) {
+            favorites->setCurrentTag(tag);
+        }
+    }
     selectCurrentPreset();
 }
 

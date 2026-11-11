@@ -7,6 +7,7 @@
 #ifndef KIS_FAVORITE_RESOURCE_MANAGER_H
 #define KIS_FAVORITE_RESOURCE_MANAGER_H
 
+#include "kritaui_export.h"
 #include <QObject>
 #include <kis_types.h>
 #include <QQueue>
@@ -24,7 +25,7 @@ class KisPaintOpPreset;
 template <typename T>
 class KisSortedHistoryList;
 
-class KisFavoriteResourceManager : public QObject, public KoResourceServerObserver<KisPaintOpPreset>
+class KRITAUI_EXPORT KisFavoriteResourceManager : public QObject, public KoResourceServerObserver<KisPaintOpPreset>
 {
     Q_OBJECT
 

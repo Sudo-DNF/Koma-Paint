@@ -1,0 +1,9 @@
+{
+    "Id": "Quick Access Docker",
+    "Type": "Service",
+    "X-KDE-Library": "kritaquickaccess",
+    "X-KDE-ServiceTypes": [
+        "Krita/Dock"
+    ],
+    "X-Krita-Version": "28"
+}

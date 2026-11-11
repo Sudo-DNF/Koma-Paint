@@ -16,6 +16,7 @@
 #include "kis_canvas2.h"
 #include "kis_config.h"
 #include "kis_popup_palette.h"
+#include <KomaPaintTokens.h>
 #include "kis_favorite_resource_manager.h"
 #include "kis_icon_utils.h"
 #include <kis_canvas_resource_provider.h>
@@ -605,12 +606,13 @@ void KisPopupPalette::paintEvent(QPaintEvent* e)
     // draws the circle halfway into the border so that the border never goes past the bounds of the popup
     QRectF circleRect(BORDER_WIDTH/2, BORDER_WIDTH/2, m_popupPaletteSize - BORDER_WIDTH, m_popupPaletteSize - BORDER_WIDTH);
     backgroundContainer.addEllipse(circleRect);
-    painter.fillPath(backgroundContainer, palette().brush(QPalette::Window));
+    // The palette reads as a surface card over the canvas.
+    painter.fillPath(backgroundContainer, KomaPaint::themeFor(palette()).surface);
     painter.drawPath(backgroundContainer);
 
     if (m_showRotationTrack) {
         painter.save();
-        QPen pen(palette().color(QPalette::Window).lighter(150), 2);
+        QPen pen(KomaPaint::themeFor(palette()).border, 2);
         painter.setPen(pen);
 
         // draw rotation snap lines
@@ -689,7 +691,7 @@ void KisPopupPalette::paintEvent(QPaintEvent* e)
         painter.restore();
         // if the slot is empty, stroke it slightly darker
         QColor color = isTagEmpty || pos >= presetCount
-            ? palette().color(QPalette::Window).lighter(150)
+            ? KomaPaint::themeFor(palette()).border
             : palette().color(QPalette::Text);
         painter.setPen(QPen(color, 1));
         painter.drawPath(presetPath);
@@ -713,7 +715,7 @@ void KisPopupPalette::paintEvent(QPaintEvent* e)
             painter.setBrush(Qt::transparent);
 
             QPainterPath emptyRecentColorsPath(drawDonutPathFull(0, 0, m_colorHistoryInnerRadius, m_colorHistoryOuterRadius));
-            painter.setPen(QPen(palette().color(QPalette::Window).lighter(150), 2, Qt::SolidLine, Qt::FlatCap, Qt::MiterJoin));
+            painter.setPen(QPen(KomaPaint::themeFor(palette()).border, 2, Qt::SolidLine, Qt::FlatCap, Qt::MiterJoin));
             painter.drawPath(emptyRecentColorsPath);
         } else {
             for (int pos = 0; pos < m_resourceManager->recentColorsTotal(); pos++) {

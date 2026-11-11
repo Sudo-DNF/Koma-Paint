@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ActionCollection version="2" name="Krita">
+  <Actions category="General">
+    <text>General</text>
+    <Action name="quick_access_popup">
+      <icon></icon>
+      <text>Quick Access</text>
+      <whatsThis></whatsThis>
+      <toolTip>Show your Quick Access palette at the cursor</toolTip>
+      <iconText>Quick Access</iconText>
+      <shortcut>Shift+Q</shortcut>
+      <isCheckable>false</isCheckable>
+      <statusTip></statusTip>
+    </Action>
+  </Actions>
+</ActionCollection>
