@@ -33,6 +33,7 @@
 #include <QListWidgetItem>
 #include <QMenu>
 #include <QScrollBar>
+#include <QSvgWidget>
 
 #include "kis_clipboard.h"
 #include "kis_icon_utils.h"
@@ -50,6 +51,8 @@
 
 #include <QCoreApplication>
 #include <kis_debug.h>
+
+#include "KomaPaintTokens.h"
 #include <QDir>
 
 #include <array>
@@ -125,6 +128,16 @@ KisWelcomePageWidget::KisWelcomePageWidget(QWidget *parent)
 {
     setupUi(this);
 
+    // Koma Paint logo above the Start column. The light or dark variant is
+    // picked in slotUpdateThemeColors().
+    m_logo = new QSvgWidget(widgetCenter);
+    m_logo->setFixedSize(176, 40);
+    verticalLayout_4->insertWidget(0, m_logo, 0, Qt::AlignLeft);
+    verticalLayout_4->insertSpacing(1, KomaPaint::Space::s5);
+
+    // The news column shows the krita.org feed, which is not Koma Paint news.
+    widgetRight->setVisible(false);
+
     // URLs that go to web browser...
     devBuildIcon->setIcon(KisIconUtils::loadIcon("warning"));
     devBuildLabel->setVisible(false);
@@ -189,8 +202,8 @@ KisWelcomePageWidget::KisWelcomePageWidget(QWidget *parent)
 #endif
 
     // configure the News area
-    KisConfig cfg(true);
-    m_networkIsAllowed = cfg.readEntry<bool>("FetchNews", false);
+    // News is fetched from krita.org, so Koma Paint never enables it.
+    m_networkIsAllowed = false;
 
 
 #ifdef ENABLE_UPDATERS
@@ -354,7 +367,7 @@ void KisWelcomePageWidget::slotUpdateThemeColors()
 
     // HTML links seem to be a bit more stubborn with theme changes... setting inline styles to help with color change
     userCommunityLink->setText(QString("<a style=\"color: " + blendedColor.name() + " \" href=\"https://krita-artists.org\">")
-                               .append(i18n("User Community")).append("</a>"));
+                               .append(i18n("Krita Artists Community")).append("</a>"));
 
     gettingStartedLink->setText(QString("<a style=\"color: " + blendedColor.name() + " \" href=\"https://docs.krita.org/user_manual/getting_started.html\">")
                                 .append(i18n("Getting Started")).append("</a>"));
@@ -366,10 +379,10 @@ void KisWelcomePageWidget::slotUpdateThemeColors()
                               .append(i18n("Support Krita")).append("</a>"));
 
     kritaWebsiteLink->setText(QString("<a style=\"color: " + blendedColor.name() + " \" href=\"https://www.krita.org?" + analyticsString + "marketing-site" + "\">")
-                              .append(i18n("Krita Website")).append("</a>"));
+                              .append(i18n("Based on Krita")).append("</a>"));
 
     sourceCodeLink->setText(QString("<a style=\"color: " + blendedColor.name() + " \" href=\"https://invent.kde.org/graphics/krita\">")
-                            .append(i18n("Source Code")).append("</a>"));
+                            .append(i18n("Krita Source Code")).append("</a>"));
 
     poweredByKDELink->setText(QString("<a style=\"color: " + blendedColor.name() + " \" href=\"https://userbase.kde.org/What_is_KDE\">")
                               .append(i18n("Powered by KDE")).append("</a>"));
@@ -386,6 +399,39 @@ void KisWelcomePageWidget::slotUpdateThemeColors()
     const QString &frameQss = "{border: 1px solid " + frameColor.name() + "}";
     recentDocsStackedWidget->setStyleSheet("QStackedWidget#recentDocsStackedWidget" + frameQss);
     newsFrame->setStyleSheet("QFrame#newsFrame" + frameQss);
+
+    // Koma Paint branding: the logo follows the theme, the primary action
+    // uses the pulse accent, and the footer states the upstream project.
+    const bool darkTheme = KomaPaint::isDarkPalette(qApp->palette());
+    m_logo->load(darkTheme ? QStringLiteral(":/splash/logo-primary-reversed.svg")
+                           : QStringLiteral(":/splash/logo-primary.svg"));
+
+    helpTitleLabel->setText(i18nc("welcome page section title", "Learn"));
+
+    // Donations go to the Krita Foundation, which Koma Paint is not part of.
+    supportKritaLink->hide();
+    supportKritaIcon->hide();
+
+    const QColor pulse(KomaPaint::Dark::pulse);
+    newFileLink->setIconSize(QSize(24, 24));
+    newFileLink->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    QFont primaryFont = newFileLink->font();
+    primaryFont.setUnderline(false);
+    newFileLink->setFont(primaryFont);
+    newFileLink->setStyleSheet(QStringLiteral(
+        "QToolButton { background-color: %1; color: %2; border: none; border-radius: %3px;"
+        " padding: %4px %5px; font-weight: 600; }"
+        "QToolButton:hover { background-color: %6; }"
+        "QToolButton:pressed { background-color: %7; }")
+        .arg(pulse.name(), QColor(KomaPaint::Dark::onPulse).name())
+        .arg(KomaPaint::Radius::sm)
+        .arg(KomaPaint::Space::s2)
+        .arg(KomaPaint::Space::s4)
+        .arg(pulse.lighter(112).name(), pulse.darker(112).name()));
+
+    labelSupportText->setTextFormat(Qt::PlainText);
+    labelSupportText->setText(i18n("Koma Paint is based on Krita. It is not affiliated with or endorsed by the Krita Foundation."));
+    labelSupportText->setStyleSheet(faintTextStyle);
 
     // show the dev version labels, if dev version is detected
     showDevVersionHighlight();
@@ -731,7 +777,7 @@ void KisWelcomePageWidget::slotSetUpdateStatus(KisUpdaterStatus updateStatus)
 
 void KisWelcomePageWidget::slotShowUpdaterErrorDetails()
 {
-    QMessageBox::warning(qApp->activeWindow(), i18nc("@title:window", "Krita"), m_updaterStatus.updaterOutput());
+    QMessageBox::warning(qApp->activeWindow(), i18nc("@title:window", "Koma Paint"), m_updaterStatus.updaterOutput());
 }
 
 void KisWelcomePageWidget::updateVersionUpdaterFrame()

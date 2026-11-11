@@ -37,7 +37,7 @@ public:
 KisAboutApplication::KisAboutApplication(QWidget *parent)
     : KoDialog(parent)
 {
-    setWindowTitle(i18n("About Krita"));
+    setWindowTitle(i18n("About Koma Paint"));
     setButtons(KoDialog::Close);
 
     WdgAboutApplication *wdgTab = new WdgAboutApplication(this);
@@ -48,26 +48,25 @@ KisAboutApplication::KisAboutApplication(QWidget *parent)
     lblLinksText    << "<html>"
                     << "<head/>"
                     << "<body><table style=\"width:100%\" cellpadding=\"30\"><tr><td>"
-                    << i18n("<p><b>Using Krita</b></p>");
+                    << i18n("<p><b>Using Koma Paint</b></p>")
+                    << i18n("<p><a href=\"https://docs.krita.org/en/user_manual/getting_started.html\"><span style=\" text-decoration: underline;\">Getting Started</span></a></p>")
+                    << i18n("<p><a href=\"https://docs.krita.org/\"><span style=\" text-decoration: underline;\">Manual</span></a></p>")
+                    << i18n("<p><a href=\"https://api.kde.org/krita/html/classKrita.html\"><span style=\" text-decoration: underline;\">Scripting API</span></a></p>")
+                    << i18n("<p><a href=\"https://scripting.krita.org/lessons/introduction\"><span style=\" text-decoration: underline;;\">Scripting School</span></a></p>")
+                    << "</td><td>"
+                    << i18n("<p><b>Based on Krita</b></p>");
 
 #ifdef Q_OS_MACOS
     // macOS store version should not contain external links containing donation buttons or forms
     if (!KisMacosEntitlements().sandbox()) {
 #endif
-
-        lblLinksText    << i18n("<p><a href=\"https://krita.org/support-us/\"><span style=\" text-decoration: underline;\">Support Krita's Development!</span></a></p>")
-                        << i18n("<p><a href=\"https://krita.org/\"><span style=\" text-decoration: underline;\">Krita Website</span></a></p>");
+        lblLinksText    << i18n("<p><a href=\"https://krita.org/\"><span style=\" text-decoration: underline;\">Krita Website</span></a></p>")
+                        << i18n("<p><a href=\"https://krita.org/support-us/\"><span style=\" text-decoration: underline;\">Support Krita's Development</span></a></p>");
 #ifdef Q_OS_MACOS
     }
 #endif
-    lblLinksText    << i18n("<p><a href=\"https://docs.krita.org/en/user_manual/getting_started.html\"><span style=\" text-decoration: underline;\">Getting Started</span></a></p>")
-                    << i18n("<p><a href=\"https://docs.krita.org/\"><span style=\" text-decoration: underline;\">Manual</span></a></p>")
-                    << "</td><td>"
-                    << i18n("<p><b>Coding Krita</b></p>")
-                    << i18n("<p><a href=\"https://krita-artists.org\"><span style=\" text-decoration: underline;\">User Community</span></a></p>")
-                    << i18n("<p><a href=\"https://invent.kde.org/graphics/krita\"><span style=\" text-decoration: underline;;\">Source Code</span></a></p>")
-                    << i18n("<p><a href=\"https://api.kde.org/krita/html/classKrita.html\"><span style=\" text-decoration: underline;\">Scripting API</span></a></p>")
-                    << i18n("<p><a href=\"https://scripting.krita.org/lessons/introduction\"><span style=\" text-decoration: underline;;\">Scripting School</span></a></p>")
+    lblLinksText    << i18n("<p><a href=\"https://krita-artists.org\"><span style=\" text-decoration: underline;\">Krita Artists Community</span></a></p>")
+                    << i18n("<p><a href=\"https://invent.kde.org/graphics/krita\"><span style=\" text-decoration: underline;;\">Krita Source Code</span></a></p>")
                     << "</td></tr></table></body>"
                     << "</html>";
 
@@ -84,6 +83,8 @@ KisAboutApplication::KisAboutApplication(QWidget *parent)
                           "<head/>"
                           "<body>"
                           "<h1 align=\"center\">Created By</h1></p>"
+                          "<p>Koma Paint is based on Krita. It is not affiliated with or endorsed by the Krita Foundation. "
+                          "Krita is created by:</p>"
                           "<p>");
 
     QFile fileDevelopers(":/developers.txt");
@@ -128,7 +129,7 @@ KisAboutApplication::KisAboutApplication(QWidget *parent)
 
     QString sponsors = i18n(
         "<html><head/><body>"
-        "<h1 align=\"center\">Development Fund</h1>"
+        "<h1 align=\"center\">Krita Development Fund</h1>"
         "<p align=\"center\"> <a href=\"https://intel.com\"><img src=\":/intel.png\"></a> "
         "<h2 align=\"center\">One Time Sponsors</h2>"
         "<p align=\"center\"> <a href=\"https://www.unrealengine.com/en-US/megagrants\"><img src=\":/epic.png\"></a> "
@@ -170,19 +171,19 @@ KisAboutApplication::KisAboutApplication(QWidget *parent)
                            "<head/>"
                            "<body>"
                            "<h1 align=\"center\"><b>Your Rights</b></h1>"
-                           "<p>Krita is released under the GNU General Public License (version 3 or any later version).</p>"
+                           "<p>Koma Paint is released under the GNU General Public License (version 3 or any later version).</p>"
                            "<p>This license grants people a number of freedoms:</p>"
                            "<ul>"
-                           "<li>You are free to use Krita, for any purpose</li>"
-                           "<li>You are free to distribute Krita</li>"
-                           "<li>You can study how Krita works and change it</li>"
-                           "<li>You can distribute changed versions of Krita</li>"
+                           "<li>You are free to use Koma Paint, for any purpose</li>"
+                           "<li>You are free to distribute Koma Paint</li>"
+                           "<li>You can study how Koma Paint works and change it</li>"
+                           "<li>You can distribute changed versions of Koma Paint</li>"
                            "</ul>"
-                           "<p>The Krita Foundation and its projects on krita.org are <b>committed</b> to preserving Krita as free software.</p>"
+                           "<p>Koma Paint is based on Krita. It is not affiliated with or endorsed by the Krita Foundation.</p>"
                            "<h1 align=\"center\">Your artwork</h1>"
-                           "<p>What you create with Krita is your sole property. All your artwork is free for you to use as you like.</p>"
-                           "<p>That means that Krita can be used commercially, for any purpose. There are no restrictions whatsoever.</p>"
-                           "<p>Krita’s GNU GPL license guarantees you this freedom. Nobody is ever permitted to take it away, in contrast "
+                           "<p>What you create with Koma Paint is your sole property. All your artwork is free for you to use as you like.</p>"
+                           "<p>That means that Koma Paint can be used commercially, for any purpose. There are no restrictions whatsoever.</p>"
+                           "<p>The GNU GPL license guarantees you this freedom. Nobody is ever permitted to take it away, in contrast "
                            "to trial or educational versions of commercial software that will forbid your work in commercial situations.</p>"
                            "<br/><hr/><pre>");
 
@@ -204,8 +205,8 @@ KisAboutApplication::KisAboutApplication(QWidget *parent)
         QString thirdPartyHtml = i18n("<html>"
                                       "<head/>"
                                       "<body>"
-                                      "<h1 align=\"center\"><b>Third-party Libraries used by Krita</b></h1>"
-                                      "<p>Krita is built on the following free software libraries:</p><p><ul>");
+                                      "<h1 align=\"center\"><b>Third-party Libraries used by Koma Paint</b></h1>"
+                                      "<p>Koma Paint is built on the following free software libraries:</p><p><ul>");
 
         Q_FOREACH (const QString &lib, thirdPartyText.readAll().split('\n', Qt::SkipEmptyParts)) {
 

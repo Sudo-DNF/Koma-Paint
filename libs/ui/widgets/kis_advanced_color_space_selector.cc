@@ -406,7 +406,7 @@ void KisAdvancedColorSpaceSelector::fillDescription()
                                                                     "profiles being very specific per printer, it is recommended to work in RGB space, and then later convert "
                                                                     "to a CMYK profile, preferably one delivered by your printer. <br/>"
                                                                     "CMYK is <b>not</b> recommended for painting."
-                                                                    "Unfortunately, Krita cannot retrieve colorants or the TRC for this space.")+"</p>");
+                                                                    "Unfortunately, Koma Paint cannot retrieve colorants or the TRC for this space.")+"</p>");
     } else if (currentModelStr == "XYZA") {
         d->colorSpaceSelector->textProfileDescription->append("<p>"+i18nc("If the selected model is XYZ",
                                                                     "<b><a href=\"https://en.wikipedia.org/wiki/CIE_1931_color_space\">CIE XYZ</a></b>"
@@ -429,7 +429,7 @@ void KisAdvancedColorSpaceSelector::fillDescription()
                                                                     "tries to encode the difference in lightness, red-green balance and yellow-blue balance. "
                                                                     "This makes it useful for color correction, but the vast majority of color maths in the blending "
                                                                     "modes do <b>not</b> work as expected here.<br/>"
-                                                                    "Similarly, Krita does not support HDR in LAB, meaning that HDR images converted to LAB lose color "
+                                                                    "Similarly, Koma Paint does not support HDR in LAB, meaning that HDR images converted to LAB lose color "
                                                                     "information. This colorspace is <b>not</b> recommended for painting, nor for export, "
                                                                     "but best as a space to do post-processing in. The TRC is assumed to be the L* TRC.")+"</p>");
     } else if (currentModelStr == "YCbCrA") {

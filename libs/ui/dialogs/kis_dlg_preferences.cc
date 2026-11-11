@@ -593,7 +593,7 @@ GeneralTab::GeneralTab(QWidget *_parent, const char *_name)
 
     grpRestartMessage->setPixmap(
         grpRestartMessage->style()->standardIcon(QStyle::SP_MessageBoxWarning).pixmap(QSize(32, 32)));
-    grpRestartMessage->setText(i18n("You will need to Restart Krita for the changes to take an effect."));
+    grpRestartMessage->setText(i18n("You will need to Restart Koma Paint for the changes to take an effect."));
 
     grpAndroidWarningMessage->setVisible(false);
     grpAndroidWarningMessage->setPixmap(
@@ -736,8 +736,8 @@ GeneralTab::GeneralTab(QWidget *_parent, const char *_name)
             grpWindowsAppData->style()->standardIcon(QStyle::SP_MessageBoxInformation).pixmap(QSize(32, 32)));
         // Similar text is also used in KisViewManager.cpp
         grpWindowsAppData->setText(i18nc("@info resource folder",
-                                         "<p>You are using the Microsoft Store package version of Krita. "
-                                         "Even though Krita can be configured to place resources under the "
+                                         "<p>You are using the Microsoft Store package version of Koma Paint. "
+                                         "Even though Koma Paint can be configured to place resources under the "
                                          "user AppData location, Windows may actually store the files "
                                          "inside a private app location.</p>\n"
                                          "<p>You should check both locations to determine where "
@@ -1200,7 +1200,7 @@ void GeneralTab::getBackgroundImage()
 
     QImage image(fn);
     if (image.isNull()) {
-        QMessageBox::warning(this, i18nc("@title:window", "Krita"), i18n("%1 is not a valid image file!", fn));
+        QMessageBox::warning(this, i18nc("@title:window", "Koma Paint"), i18n("%1 is not a valid image file!", fn));
     }
     else {
         m_backgroundimage->setText(fn);
@@ -1387,7 +1387,7 @@ ColorSettingsTab::ColorSettingsTab(QWidget *parent, const char *name)
                  "a separate native surface for the canvas. It might cause "
                  "performance issues on some systems.</p>"
                  ""
-                 "<p>If color management is disabled, Krita will render "
+                 "<p>If color management is disabled, Koma Paint will render "
                  "the canvas into the surface of the main window, which "
                  "is considered sRGB. It will cause two limitations:"
                  ""
@@ -2680,7 +2680,7 @@ KisDlgPreferences::KisDlgPreferences(QWidget* parent, const char* name)
     : KPageDialog(parent)
 {
     Q_UNUSED(name);
-    setWindowTitle(i18n("Configure Krita"));
+    setWindowTitle(i18n("Configure Koma Paint"));
     setStandardButtons(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::RestoreDefaults);
 
     setFaceType(KPageDialog::List);

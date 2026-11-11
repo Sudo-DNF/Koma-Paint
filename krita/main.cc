@@ -715,10 +715,14 @@ if (!qEnvironmentVariableIsEmpty("KRITA_OPENGL_DEBUG")) {
 
     /// Initialize application info, it will be used by both, Qt and
     /// DrKonqi of the host system
+    // The component name stays "krita" so that the configuration file
+    // (kritarc) and resource folders keep their established locations.
     KAboutData aboutData("krita",
-                            i18n("Krita"),
+                            i18n("Koma Paint"),
                             KritaVersionWrapper::versionString(true),
-                            i18n("Krita is the full-featured digital art studio"),
+                            i18n("Koma Paint is a digital painting and comic studio. "
+                                 "Koma Paint is based on Krita and is not affiliated with "
+                                 "or endorsed by the Krita Foundation."),
                             KAboutLicense::GPL,
                             i18nc("@info:credit", "© 1999–2026 The Krita Developers"));
     aboutData.setHomepage(QStringLiteral("https://krita.org"));
@@ -802,7 +806,7 @@ if (!qEnvironmentVariableIsEmpty("KRITA_OPENGL_DEBUG")) {
     KisApplication::setAttribute(Qt::AA_DisableWindowContextHelpButton);
 #endif
     app.installEventFilter(KisQtWidgetsTweaker::instance());
-    app.setDesktopFileName(QStringLiteral("org.kde.krita"));
+    app.setDesktopFileName(QStringLiteral("org.komapaint.KomaPaint"));
 
     if (!args.noSplash()) {
         QWidget *splash = new KisSplashScreen(480);
@@ -817,7 +821,7 @@ if (!qEnvironmentVariableIsEmpty("KRITA_OPENGL_DEBUG")) {
         if (osVersion.majorVersion() < QOperatingSystemVersion::Windows7.majorVersion()) {
             if (cfg.readEntry("WarnedAboutUnsupportedWindows", false)) {
                 QMessageBox::information(nullptr,
-                                         i18nc("@title:window", "Krita: Warning"),
+                                         i18nc("@title:window", "Koma Paint: Warning"),
                                          i18n("You are running an unsupported version of Windows: %1.\n"
                                               "This is not recommended. Do not report any bugs.\n"
                                               "Please update to a supported version of Windows: Windows 7, 8, 8.1 or 10.", osVersion.name()));

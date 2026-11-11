@@ -10,12 +10,15 @@
 #include <QWidget>
 #include <QTimer>
 
-class QPixmap;
 class QSvgWidget;
 class QLabel;
 
 #include "kritaui_export.h"
 
+/**
+ * The Koma Paint splash card: the stacked logo on the brand background,
+ * with the version and the current loading step underneath.
+ */
 class KRITAUI_EXPORT KisSplashScreen : public QWidget
 {
     Q_OBJECT
@@ -34,20 +37,20 @@ public:
 
     void setLoadingText(QString text);
 
+    /// Raster version of the splash logo, for platforms that need a bitmap.
     static Source getImageSource();
 
-private:
-    void updateSplashImage(const int height);
+protected:
+    void paintEvent(QPaintEvent *event) override;
 
 private:
+    void layoutCard(const int height);
 
+private:
     QTimer m_timer;
-    bool m_displayLinks { false };
-    QLabel* m_lblSplash;
-    QSvgWidget *m_brandingSvg;
-    QSvgWidget *m_bannerSvg;
+    QSvgWidget *m_logoSvg;
     QLabel *m_loadingTextLabel;
-    QLabel *m_artCreditsLabel;
+    QLabel *m_footerLabel;
     QString m_versionHtml;
 };
 

@@ -1603,10 +1603,10 @@ void KisAssistantTool::loadAssistants()
         assistant.clear();
     }
     if (xml.hasError()) {
-        QMessageBox::warning(qApp->activeWindow(), i18nc("@title:window", "Krita"), xml.errorString());
+        QMessageBox::warning(qApp->activeWindow(), i18nc("@title:window", "Koma Paint"), xml.errorString());
     }
     if (errors) {
-        QMessageBox::warning(qApp->activeWindow(), i18nc("@title:window", "Krita"), i18n("Errors were encountered. Not all assistants were successfully loaded."));
+        QMessageBox::warning(qApp->activeWindow(), i18nc("@title:window", "Koma Paint"), i18n("Errors were encountered. Not all assistants were successfully loaded."));
     }
 
     KUndo2Command *command = new EditAssistantsCommand(m_canvas, m_origAssistantList, KisPaintingAssistant::cloneAssistantList(m_canvas->paintingAssistantsDecoration()->assistants()));

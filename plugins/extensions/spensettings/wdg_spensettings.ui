@@ -24,7 +24,7 @@
    <item>
     <widget class="QLabel" name="label_9">
      <property name="text">
-      <string>You must enable Air Actions for Krita in your system settings for them to work. Note that only the S-Pen Pro supports Air Actions, the regular S-Pen does not. Not all devices support gestures.</string>
+      <string>You must enable Air Actions for Koma Paint in your system settings for them to work. Note that only the S-Pen Pro supports Air Actions, the regular S-Pen does not. Not all devices support gestures.</string>
      </property>
      <property name="wordWrap">
       <bool>true</bool>

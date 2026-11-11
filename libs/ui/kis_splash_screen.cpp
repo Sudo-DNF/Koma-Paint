@@ -7,70 +7,66 @@
 #include "kis_splash_screen.h"
 
 #include <QApplication>
-#include <QScreen>
-#include <QGraphicsDropShadowEffect>
-#include <QPixmap>
-#include <QPainter>
-#include <QCheckBox>
-#include <kis_debug.h>
-#include <QFile>
-#include <QScreen>
-#include <QWindow>
-#include <QSvgWidget>
-#include <QVBoxLayout>
 #include <QLabel>
-
-#include <KisPart.h>
-#include <KisApplication.h>
+#include <QPainter>
+#include <QPainterPath>
+#include <QScreen>
+#include <QSvgWidget>
+#include <QWindow>
 
 #include <kis_icon.h>
-
 #include <klocalizedstring.h>
-#include <kconfig.h>
-#include <ksharedconfig.h>
-#include <kconfiggroup.h>
 
-static void addDropShadow(QWidget *widget)
+#include "KomaPaintTokens.h"
+
+namespace
 {
-    QGraphicsDropShadowEffect *effect = new QGraphicsDropShadowEffect(widget);
-    effect->setBlurRadius(4);
-    effect->setOffset(0.5);
-    effect->setColor(QColor(0, 0, 0, 255));
-    widget->setGraphicsEffect(effect);
+// The card keeps the same proportions at every size it is shown at.
+constexpr qreal cardAspect = 4.0 / 3.0;
+constexpr qreal logoHeightRatio = 0.42;
+constexpr qreal logoAspect = 424.13 / 282.7;
 }
 
 KisSplashScreen::KisSplashScreen(int height, QWidget *parent, Qt::WindowFlags f)
     : QWidget(parent, f)
-      , m_versionHtml(qApp->applicationVersion().toHtmlEscaped())
+    , m_versionHtml(qApp->applicationVersion().toHtmlEscaped())
 {
-    setWindowTitle(i18n("Krita"));
+    setWindowTitle(i18n("Koma Paint"));
 #ifndef Q_OS_MACOS
     setWindowIcon(KisIconUtils::loadIcon("krita-branding"));
 #endif
 
-    setLayout(new QVBoxLayout());
-    layout()->setContentsMargins(QMargins());
-    m_lblSplash = new QLabel();
-    m_lblSplash->setFrameShape(QFrame::NoFrame);
-    layout()->addWidget(m_lblSplash);
+    if (!parent) {
+        // Rounded card corners need a transparent window behind them.
+        setAttribute(Qt::WA_TranslucentBackground);
+    }
 
-    m_loadingTextLabel = new QLabel(m_lblSplash);
+    const QString mutedColor = QColor(KomaPaint::Dark::textMuted).name();
+
+    m_logoSvg = new QSvgWidget(QStringLiteral(":/splash/logo-stacked-reversed.svg"), this);
+
+    m_loadingTextLabel = new QLabel(this);
     m_loadingTextLabel->setTextFormat(Qt::RichText);
-    m_loadingTextLabel->setStyleSheet(QStringLiteral("QLabel { color: #fff; background-color: transparent; }"));
-    m_loadingTextLabel->setAlignment(Qt::AlignRight | Qt::AlignTop);
-    addDropShadow(m_loadingTextLabel);
+    m_loadingTextLabel->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+    m_loadingTextLabel->setStyleSheet(QStringLiteral("QLabel { color: %1; background: transparent; }").arg(mutedColor));
 
-    m_brandingSvg = new QSvgWidget(QStringLiteral(":/krita-branding.svgz"), m_lblSplash);
-    m_bannerSvg = new QSvgWidget(QStringLiteral(":/splash/banner.svg"), m_lblSplash);
-    addDropShadow(m_bannerSvg);
+    m_footerLabel = new QLabel(this);
+    m_footerLabel->setTextFormat(Qt::PlainText);
+    m_footerLabel->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
+    m_footerLabel->setStyleSheet(QStringLiteral("QLabel { color: %1; background: transparent; }").arg(mutedColor));
+    m_footerLabel->setText(i18nc("splash screen footer", "Koma Paint is based on Krita."));
 
-    m_artCreditsLabel = new QLabel(m_lblSplash);
-    m_artCreditsLabel->setTextFormat(Qt::PlainText);
-    m_artCreditsLabel->setStyleSheet(QStringLiteral("QLabel { color: #fff; background-color: transparent; font: 10pt; }"));
-    m_artCreditsLabel->setAlignment(Qt::AlignRight | Qt::AlignBottom);
-    addDropShadow(m_artCreditsLabel);
+    QFont uiFont(QStringLiteral("Inter"));
+    uiFont.setPixelSize(13);
+    uiFont.setWeight(QFont::Medium);
+    m_loadingTextLabel->setFont(uiFont);
 
-    updateSplashImage(height);
+    QFont labelFont(QStringLiteral("Inter"));
+    labelFont.setPixelSize(12);
+    labelFont.setWeight(QFont::DemiBold);
+    m_footerLabel->setFont(labelFont);
+
+    layoutCard(height);
     setLoadingText(QString()); // the version string is set here too
 
     connect(&m_timer, SIGNAL(timeout()), SLOT(raise()));
@@ -79,82 +75,55 @@ KisSplashScreen::KisSplashScreen(int height, QWidget *parent, Qt::WindowFlags f)
     m_timer.start(10);
 }
 
-void KisSplashScreen::updateSplashImage(const int height)
+void KisSplashScreen::layoutCard(const int height)
 {
-    const int bannerHeight = height * 0.16875;
-    const int marginTop = height * 0.05;
-    const int marginRight = height * 0.1;
-
-    Source source = getImageSource();
-    QPixmap img(source.resourcePath);
-
-    if (img.isNull() || img.height() == 0) return;
-
-    // Preserve aspect ratio of splash.
-    const int width = height * img.width() / img.height();
+    const int width = qRound(height * cardAspect);
+    const int margin = KomaPaint::Space::s6;
 
     setFixedSize(width, height);
-    m_lblSplash->setFixedSize(width, height);
 
-    // Let scaledContents downscale to the fixedSize
-    m_lblSplash->setScaledContents(true);
-    m_lblSplash->setPixmap(img);
+    const int logoHeight = qRound(height * logoHeightRatio);
+    const int logoWidth = qRound(logoHeight * logoAspect);
+    const int logoTop = qRound(height * 0.16);
+    m_logoSvg->setFixedSize(logoWidth, logoHeight);
+    m_logoSvg->move((width - logoWidth) / 2, logoTop);
 
-    // Align banner to top-left with margin.
-    m_bannerSvg->setFixedHeight(bannerHeight);
-    m_bannerSvg->setFixedWidth(bannerHeight * m_bannerSvg->sizeHint().width() / m_bannerSvg->sizeHint().height());
-    m_bannerSvg->move(width - m_bannerSvg->width() - marginRight, marginTop);
+    const int textTop = logoTop + logoHeight + KomaPaint::Space::s5;
+    m_loadingTextLabel->setFixedWidth(width - 2 * margin);
+    m_loadingTextLabel->move(margin, textTop);
 
-    // Place logo to the left of banner.
-    m_brandingSvg->setFixedSize(bannerHeight, bannerHeight);
-    m_brandingSvg->move(m_bannerSvg->x() - m_brandingSvg->width(), marginTop);
+    m_footerLabel->setFixedSize(width - 2 * margin, KomaPaint::Space::s5);
+    m_footerLabel->move(margin, height - margin - m_footerLabel->height());
+}
 
-    // Place loading text immediately below.
-    m_loadingTextLabel->move(marginRight, m_brandingSvg->geometry().bottom());
-    m_loadingTextLabel->setFixedWidth(m_bannerSvg->geometry().right() - marginRight);
+void KisSplashScreen::paintEvent(QPaintEvent *event)
+{
+    Q_UNUSED(event);
 
-    // Place credits text on bottom right with similar margins.
-    m_artCreditsLabel->setText(source.artistCredit);
-    m_artCreditsLabel->setFixedWidth(m_loadingTextLabel->width());
-    m_artCreditsLabel->setFixedHeight(20);
-    m_artCreditsLabel->move(m_loadingTextLabel->x(), height - marginTop - m_artCreditsLabel->height());
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    // Flat card: brand background, 1px border, large radius. No shadow.
+    const QRectF card = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+    QPainterPath path;
+    path.addRoundedRect(card, KomaPaint::Radius::lg, KomaPaint::Radius::lg);
+
+    painter.fillPath(path, QColor(KomaPaint::Dark::bg));
+    painter.setPen(QPen(QColor(KomaPaint::Dark::border), 1.0));
+    painter.drawPath(path);
 }
 
 void KisSplashScreen::setLoadingText(QString text)
 {
-    int larger = 12;
-    int notAsLarge = larger - 1;
-    QString htmlText = QStringLiteral("<span style='font: %3pt;'><span style='font: bold %4pt;'>%1</span><br><i>%2</i></span>")
-            .arg(m_versionHtml, text.toHtmlEscaped(), QString::number(notAsLarge), QString::number(larger));
+    const QString textColor = QColor(KomaPaint::Dark::text).name();
+    QString htmlText = QStringLiteral("<span style='color: %3;'>%1</span><br>%2")
+            .arg(m_versionHtml, text.toHtmlEscaped(), textColor);
     m_loadingTextLabel->setText(htmlText);
 }
 
 KisSplashScreen::Source KisSplashScreen::getImageSource()
 {
-    QString artistCredit = i18nc("Normal splash artist name", "Tyson Tan");
-    // Loading the ginormous 4K PNG splash image increases the startup time on
-    // Android by several seconds and at the same time looks really bad when
-    // scaled down to a dinky size. Instead of overengineering this into an
-    // Enterprise Splash Screen Solution where we choose the image based on
-    // screen size or something, we'll just use a HD JPEG instead. It's fine.
-#ifdef Q_OS_ANDROID
-    QString resourcePath = QStringLiteral(":/splash/hd.jpg");
-#else
-    QString resourcePath = QStringLiteral(":/splash/0.png");
-    // TODO: Re-add the holiday splash...
-#if 0
-    QDate currentDate = QDate::currentDate();
-    if (currentDate > QDate(currentDate.year(), 12, 4) ||
-            currentDate < QDate(currentDate.year(), 1, 9)) {
-        resourcePath = QStringLiteral(":/splash/1.png");
-        artistCredit = QStringLiteral("???")};
-    }
-#endif
-#endif
-    if (!artistCredit.isEmpty()) {
-        artistCredit = i18nc("splash image credit", "Artwork by: %1", artistCredit);
-    }
-    return Source{resourcePath, artistCredit};
+    return Source{QStringLiteral(":/splash/logo-stacked-reversed.png"), QString()};
 }
 
 void KisSplashScreen::repaint()
@@ -174,8 +143,6 @@ void KisSplashScreen::show()
             // screen with a different scale factor. If we don't explicitly
             // move it to the primary screen, the position will be scaled with
             // the wrong factor and the splash will be offset.
-            // XXX: In theory this branch should be unreachable, but leaving
-            //      this here just in case.
             windowHandle->setScreen(QApplication::primaryScreen());
         }
         if (!screen) {

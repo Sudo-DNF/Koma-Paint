@@ -21,6 +21,7 @@
 
 #include "config-updaters.h"
 class RecentItemDelegate;
+class QSvgWidget;
 class KisMainWindow;
 
 // Custom QAction to bridge a QLabel::linkActivated signal to a QAction::setChecked signal
@@ -115,6 +116,7 @@ private:
 #endif
 
     KisMainWindow *m_mainWindow {nullptr};
+    QSvgWidget *m_logo {nullptr};
 
     /// help us see how many people are clicking startup screen links
     /// you can see the results in Matomo (stats.kde.org)

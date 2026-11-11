@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<component type="desktop">
+  <id>org.komapaint.KomaPaint</id>
+  <launchable type="desktop-id">org.komapaint.KomaPaint.desktop</launchable>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <developer id="org.komapaint">
+    <name>Koma Paint</name>
+  </developer>
+  <name>Koma Paint</name>
+  <summary>Paint, ink and draw comics in a studio-style workspace</summary>
+  <description>
+    <p>Koma Paint is a digital painting and comic studio with a workspace built around how illustrators work: tools and sub tools on the left, layers and navigation on the right, and the canvas in the middle.</p>
+    <p>Switch between brush variants from the Sub Tool panel, clip, lock and color-code layers straight from the Layers panel, and mix color on a palette that behaves like paint.</p>
+    <p>Koma Paint is based on Krita. It is not affiliated with or endorsed by the Krita Foundation.</p>
+  </description>
+  <categories>
+    <category>Graphics</category>
+    <category>2DGraphics</category>
+    <category>RasterGraphics</category>
+  </categories>
+  <provides>
+    <binary>komapaint</binary>
+    <id>org.komapaint.KomaPaint.desktop</id>
+  </provides>
+  <content_rating type="oars-1.1"/>
+</component>

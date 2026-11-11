@@ -341,7 +341,8 @@ add_feature_info("Limit long tests" LIMIT_LONG_TESTS "Run long running unittests
 option(BUILD_KRITA_QT_DESIGNER_PLUGINS "Build Qt Designer plugins for Krita widgets" OFF)
 add_feature_info("Build Qt Designer plugins" BUILD_KRITA_QT_DESIGNER_PLUGINS "Builds Qt Designer plugins for Krita widgets (use -DBUILD_KRITA_QT_DESIGNER_PLUGINS=ON to enable).")
 
-option(ENABLE_UPDATERS "Enable updaters/update notifications" ON)
+# Off by default: the upstream updaters check Krita's release feed, not Koma Paint's.
+option(ENABLE_UPDATERS "Enable updaters/update notifications" OFF)
 configure_file(config-updaters.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config-updaters.h)
 add_feature_info("Enable updaters" ENABLE_UPDATERS "Enable updaters/update notifications.")
 
@@ -380,19 +381,10 @@ if(BUILD_WITH_QT6 AND NOT "QT6" IN_LIST ALLOW_UNSTABLE)
     )
 endif()
 
-# Branding. Available options: default, Beta, Plus, Next. Can be set from command line
+# Branding. Available options: koma, default, Beta, Plus, Next. Can be set from command line
+# Koma Paint ships its own branding unless another set is requested explicitly.
 if ("${BRANDING}" STREQUAL "")
-    if (DEFINED KRITA_STABLE)
-        set(BRANDING "default")
-    elseif (DEFINED KRITA_BETA OR DEFINED KRITA_RC)
-        set(BRANDING "Beta")
-    elseif (DEFINED KRITA_STABLE_BRANCH)
-        # Alpha/pre-alpha in stable branch
-        set(BRANDING "Plus")
-    else ()
-        # Alpha/pre-alpha in master branch or other experiments
-        set(BRANDING "Next")
-    endif ()
+    set(BRANDING "koma")
 endif()
 
 # Qt6 isn't stable, don't make it look like it is.
@@ -400,7 +392,14 @@ if(BRANDING STREQUAL "default" AND BUILD_WITH_QT6)
     set(BRANDING "Beta")
 endif()
 
-message(STATUS "Branding selected: ${BRANDING}")
+# The freedesktop icon name installed by the branding set.
+if(BRANDING STREQUAL "koma")
+    set(BRANDING_ICON_NAME "komapaint")
+else()
+    set(BRANDING_ICON_NAME "krita")
+endif()
+
+message(STATUS "Branding selected: ${BRANDING} (icon: ${BRANDING_ICON_NAME})")
 
 include(MacroJPEG)
 

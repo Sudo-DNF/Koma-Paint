@@ -619,7 +619,7 @@ bool KisImportExportManager::askUserAboutExportConfiguration(
 
         error += "</ul>";
 
-        QMessageBox::critical(KisPart::instance()->currentMainwindow(), i18nc("@title:window", "Krita: Export Error"), error);
+        QMessageBox::critical(KisPart::instance()->currentMainwindow(), i18nc("@title:window", "Koma Paint: Export Error"), error);
         return false;
     }
 

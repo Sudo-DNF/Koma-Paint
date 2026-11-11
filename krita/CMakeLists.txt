@@ -15,7 +15,7 @@ set(krita_SRCS main.cc)
 
 # Set the application icon on the application
 if (NOT APPLE)
-	file(GLOB ICON_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/*-apps-krita.png")
+	file(GLOB ICON_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/*-apps-${BRANDING_ICON_NAME}.png")
 else()
     # XCode below 26 cannot work with .icon format
     if(${XCODE_VERSION} VERSION_GREATER_EQUAL "26.0")
@@ -39,13 +39,13 @@ else()
         )
     else()
         set(ICON_SRCS
-             "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/16-apps-krita.png"
-             "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/32-apps-krita.png"
-             "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/48-apps-krita.png"
-             "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/128-apps-krita.png"
-             "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/256-apps-krita.png"
-             "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/512-apps-krita.png"
-             "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/1024-apps-krita.png"
+             "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/16-apps-${BRANDING_ICON_NAME}.png"
+             "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/32-apps-${BRANDING_ICON_NAME}.png"
+             "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/48-apps-${BRANDING_ICON_NAME}.png"
+             "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/128-apps-${BRANDING_ICON_NAME}.png"
+             "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/256-apps-${BRANDING_ICON_NAME}.png"
+             "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/512-apps-${BRANDING_ICON_NAME}.png"
+             "${CMAKE_CURRENT_SOURCE_DIR}/pics/branding/${BRANDING}/1024-apps-${BRANDING_ICON_NAME}.png"
         )
     endif() # XCode version
 endif()
@@ -202,6 +202,7 @@ elseif (WIN32)
     set_target_properties(krita PROPERTIES PREFIX "")
 else()
     add_executable(krita ${krita_SRCS})
+    set_target_properties(krita PROPERTIES OUTPUT_NAME "komapaint")
 endif()
 target_link_libraries(krita
     PRIVATE
@@ -224,7 +225,7 @@ if (APPLE)
         @loader_path/../Frameworks;@executable_path/../../../../lib;@executable_path/../lib;@executable_path/../Frameworks")
     set_target_properties(krita PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.template)
     set_target_properties(krita PROPERTIES MACOSX_BUNDLE_GUI_IDENTIFIER "org.krita")
-    set_target_properties(krita PROPERTIES MACOSX_BUNDLE_BUNDLE_NAME "Krita")
+    set_target_properties(krita PROPERTIES MACOSX_BUNDLE_BUNDLE_NAME "Koma Paint")
     set_target_properties(krita PROPERTIES MACOSX_BUNDLE_ICON_FILE "krita")
     set_target_properties(krita PROPERTIES MACOSX_BUNDLE_LONG_VERSION_STRING ${KRITA_VERSION_STRING})
     set_target_properties(krita PROPERTIES MACOSX_BUNDLE_SHORT_VERSION_STRING ${KRITA_VERSION_NUMBER_STRING})
@@ -273,7 +274,7 @@ if(APPLE)
 else()
     install(TARGETS krita ${INSTALL_TARGETS_DEFAULT_ARGS})
 endif()
-install(FILES org.kde.krita.desktop DESTINATION ${KDE_INSTALL_APPDIR})
+install(FILES org.komapaint.KomaPaint.desktop DESTINATION ${KDE_INSTALL_APPDIR})
 
 set(actions_files krita.action kritamenu.action)
 if (ANDROID)
@@ -284,7 +285,7 @@ if (ANDROID)
 endif()
 install(FILES ${actions_files} DESTINATION ${KDE_INSTALL_DATADIR}/krita/actions)
 
-install(FILES  org.kde.krita.appdata.xml DESTINATION ${KDE_INSTALL_METAINFODIR} )
+install(FILES  org.komapaint.KomaPaint.appdata.xml DESTINATION ${KDE_INSTALL_METAINFODIR} )
 
 install(DIRECTORY DESTINATION ${KDE_INSTALL_DATADIR}/krita/shortcuts)
 
