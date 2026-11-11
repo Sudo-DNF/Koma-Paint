@@ -7,12 +7,16 @@
 #define KOMALINEARTRECORDER_H
 
 #include <QColor>
+#include <QImage>
 #include <QPainterPath>
+#include <QScopedPointer>
 #include <QPointer>
 #include <QSet>
 #include <QVector>
 
 #include <kis_types.h>
+#include <kis_distance_information.h>
+#include <brushengine/kis_paint_information.h>
 
 #include "flake/KomaLineartShape.h"
 #include "kritaui_export.h"
@@ -22,6 +26,7 @@ class KoViewConverter;
 class KisCanvas2;
 class KisShapeLayer;
 class KUndo2Command;
+class KisPainter;
 
 /**
  * Records a brush-tool stroke on a vector layer.
@@ -46,6 +51,7 @@ public:
     static void setEraserMode(EraserMode mode);
 
     KomaLineartRecorder();
+    ~KomaLineartRecorder();
 
     bool isActive() const;
 
@@ -69,6 +75,14 @@ private:
     void requestUpdate(const QRectF &documentRect);
     QRectF previewBounds() const;
 
+    /// Starts painting the live preview with the stroke's brush.
+    bool beginBrushPreview(KisCanvas2 *canvas);
+    /// Paints the newest segment of the live preview.
+    void paintBrushPreview(const QPointF &documentPoint, qreal pressure);
+    void endBrushPreview();
+    QPointF documentToPixel(const QPointF &documentPoint) const;
+    QRectF pixelToDocument(const QRectF &pixelRect) const;
+
     QPointer<KisCanvas2> m_canvas;
     KisShapeLayer *m_layer {nullptr};
     bool m_active {false};
@@ -79,6 +93,18 @@ private:
     KisPaintOpPresetSP m_brush;  ///< Snapshot of the brush, for rendering.
     QVector<KomaLineartPoint> m_raw;
     QPainterPath m_preview;     ///< Outline of the stroke so far, document units.
+
+    // Live preview painted with the stroke's brush, in image pixels.
+    qreal m_xRes {1.0};
+    qreal m_yRes {1.0};
+    KisImageSP m_brushImage;
+    KisPaintLayerSP m_brushLayer;
+    QScopedPointer<KisPainter> m_brushPainter;
+    KisDistanceInformation m_brushDistance;
+    KisPaintInformation m_lastBrushInfo;
+    bool m_brushStarted {false};
+    QImage m_brushPreview;      ///< The painted stroke so far.
+    QRect m_brushPreviewRect;   ///< Image pixels covered by m_brushPreview.
 
     qreal m_eraserRadius {1.0};
     EraserMode m_eraserMode {EraserMode::UpToIntersection};

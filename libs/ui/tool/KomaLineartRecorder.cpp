@@ -11,6 +11,13 @@
 #include <QPainterPathStroker>
 
 #include <kis_config.h>
+#include <KisRunnableStrokeJobData.h>
+#include <KoColorSpaceRegistry.h>
+#include <KoCompositeOpRegistry.h>
+#include <brushengine/kis_paintop.h>
+#include <kis_paint_layer.h>
+#include <kis_painter.h>
+#include <tuple>
 
 #include <kundo2command.h>
 #include <klocalizedstring.h>
@@ -48,6 +55,137 @@ void KomaLineartRecorder::setEraserMode(EraserMode mode)
 
 KomaLineartRecorder::KomaLineartRecorder()
 {
+}
+
+KomaLineartRecorder::~KomaLineartRecorder()
+{
+    endBrushPreview();
+}
+
+QPointF KomaLineartRecorder::documentToPixel(const QPointF &documentPoint) const
+{
+    return QPointF(documentPoint.x() * m_xRes, documentPoint.y() * m_yRes);
+}
+
+QRectF KomaLineartRecorder::pixelToDocument(const QRectF &pixelRect) const
+{
+    return QRectF(pixelRect.x() / m_xRes, pixelRect.y() / m_yRes,
+                  pixelRect.width() / m_xRes, pixelRect.height() / m_yRes);
+}
+
+bool KomaLineartRecorder::beginBrushPreview(KisCanvas2 *canvas)
+{
+    endBrushPreview();
+    if (!m_brush || !m_brush->settings()) {
+        return false;
+    }
+
+    // A private image and layer give the brush engine what it expects;
+    // only the tiles the stroke touches use memory.
+    const QRect bounds = canvas->image()->bounds();
+    const KoColorSpace *colorSpace = KoColorSpaceRegistry::instance()->rgb8();
+    m_brushImage = new KisImage(nullptr, qMax(1, bounds.width()), qMax(1, bounds.height()),
+                                colorSpace, QStringLiteral("lineart preview"));
+    m_brushLayer = new KisPaintLayer(m_brushImage, QStringLiteral("lineart preview"), OPACITY_OPAQUE_U8, colorSpace);
+
+    KisPaintOpPresetSP preset = m_brush->clone().dynamicCast<KisPaintOpPreset>();
+    if (!preset || !preset->settings()) {
+        endBrushPreview();
+        return false;
+    }
+    preset->settings()->setPaintOpSize(m_baseWidth * m_xRes);
+
+    m_brushPainter.reset(new KisPainter(m_brushLayer->paintDevice()));
+    m_brushPainter->setPaintColor(KoColor(m_color, colorSpace));
+    m_brushPainter->setBackgroundColor(KoColor(Qt::white, colorSpace));
+    m_brushPainter->setCompositeOpId(COMPOSITE_OVER);
+    m_brushPainter->setOpacityF(preset->settings()->paintOpOpacity());
+    m_brushPainter->setPaintOpPreset(preset, m_brushLayer, m_brushImage);
+    if (!m_brushPainter->paintOp()) {
+        endBrushPreview();
+        return false;
+    }
+
+    m_brushDistance = KisDistanceInformation();
+    m_brushStarted = false;
+    m_brushPreview = QImage();
+    m_brushPreviewRect = QRect();
+    return true;
+}
+
+void KomaLineartRecorder::paintBrushPreview(const QPointF &documentPoint, qreal pressure)
+{
+    if (!m_brushPainter) {
+        return;
+    }
+
+    // Same pressure the finished line will be rendered with.
+    const KisPaintInformation info(documentToPixel(documentPoint), qBound(0.0, pressure, 1.0));
+    if (!m_brushStarted) {
+        m_brushPainter->paintAt(info, &m_brushDistance);
+        m_brushStarted = true;
+    } else {
+        m_brushPainter->paintLine(m_lastBrushInfo, info, &m_brushDistance);
+    }
+    m_lastBrushInfo = info;
+
+    // Brush engines may queue their dabs; render them now.
+    for (int round = 0; round < 10000; ++round) {
+        QVector<KisRunnableStrokeJobData*> jobs;
+        bool needsMoreUpdates = false;
+        std::tie(std::ignore, needsMoreUpdates) = m_brushPainter->paintOp()->doAsynchronousUpdate(jobs);
+        for (KisRunnableStrokeJobData *job : jobs) {
+            job->run();
+            delete job;
+        }
+        if (jobs.isEmpty() && !needsMoreUpdates) {
+            break;
+        }
+    }
+
+    // Copy only the pixels that changed into the preview image.
+    const QVector<QRect> dirty = m_brushPainter->takeDirtyRegion();
+    if (dirty.isEmpty()) {
+        return;
+    }
+    QRect changed;
+    for (const QRect &rect : dirty) {
+        changed |= rect;
+    }
+
+    const QRect grown = m_brushPreviewRect | changed;
+    if (grown != m_brushPreviewRect) {
+        QImage resized(grown.size(), QImage::Format_ARGB32_Premultiplied);
+        resized.fill(Qt::transparent);
+        if (!m_brushPreview.isNull()) {
+            QPainter copier(&resized);
+            copier.setCompositionMode(QPainter::CompositionMode_Source);
+            copier.drawImage(m_brushPreviewRect.topLeft() - grown.topLeft(), m_brushPreview);
+        }
+        m_brushPreview = resized;
+        m_brushPreviewRect = grown;
+    }
+
+    QPainter writer(&m_brushPreview);
+    writer.setCompositionMode(QPainter::CompositionMode_Source);
+    for (const QRect &rect : dirty) {
+        const QImage part = m_brushLayer->paintDevice()->convertToQImage(nullptr, rect.x(), rect.y(),
+                                                                         rect.width(), rect.height());
+        writer.drawImage(rect.topLeft() - m_brushPreviewRect.topLeft(), part);
+    }
+    writer.end();
+
+    requestUpdate(pixelToDocument(changed));
+}
+
+void KomaLineartRecorder::endBrushPreview()
+{
+    m_brushPainter.reset();
+    m_brushLayer = nullptr;
+    m_brushImage = nullptr;
+    m_brushStarted = false;
+    m_brushPreview = QImage();
+    m_brushPreviewRect = QRect();
 }
 
 bool KomaLineartRecorder::isActive() const
@@ -90,8 +228,14 @@ bool KomaLineartRecorder::begin(KisCanvas2 *canvas, KisShapeLayer *layer, const 
     m_eraserRadius = m_baseWidth / 2.0;
     m_color = canvas->resourceManager()->foregroundColor().toQColor();
     m_color.setAlpha(255);
-    // New lines are rendered with the brush they are drawn with.
+    // New lines are rendered with the brush they are drawn with, and the
+    // stroke previews with it while it is drawn.
     m_brush = erase ? KisPaintOpPresetSP() : KomaLineartShape::brushSnapshot(preset, m_color);
+    m_xRes = qMax(canvas->image()->xRes(), 1e-6);
+    m_yRes = qMax(canvas->image()->yRes(), 1e-6);
+    if (!erase) {
+        beginBrushPreview(canvas);
+    }
 
     m_active = true;
     add(documentPoint, pressure);
@@ -115,7 +259,11 @@ void KomaLineartRecorder::add(const QPointF &documentPoint, qreal pressure)
     const QRectF before = m_preview.boundingRect();
     m_raw.append({documentPoint, widthForPressure(pressure)});
     m_preview = KomaLineartShape::outlineForCenterline(m_raw);
-    requestUpdate(before | m_preview.boundingRect());
+    if (m_brushPainter) {
+        paintBrushPreview(documentPoint, pressure);
+    } else {
+        requestUpdate(before | m_preview.boundingRect());
+    }
 }
 
 void KomaLineartRecorder::collectErasedLines(const QPointF &documentPoint)
@@ -187,6 +335,7 @@ void KomaLineartRecorder::finish()
     m_preview = QPainterPath();
     m_erased.clear();
     m_eraserTrail.clear();
+    endBrushPreview();
     requestUpdate(dirty);
 }
 
@@ -263,12 +412,16 @@ void KomaLineartRecorder::cancel()
     m_raw.clear();
     m_preview = QPainterPath();
     m_erased.clear();
+    endBrushPreview();
     requestUpdate(dirty);
 }
 
 QRectF KomaLineartRecorder::previewBounds() const
 {
     QRectF bounds = m_preview.boundingRect();
+    if (!m_brushPreviewRect.isEmpty()) {
+        bounds |= pixelToDocument(m_brushPreviewRect);
+    }
     for (KomaLineartShape *line : m_erased) {
         bounds |= line->absoluteTransformation().map(line->outline()).boundingRect();
     }
@@ -317,6 +470,13 @@ void KomaLineartRecorder::paint(QPainter &painter, const KoViewConverter &conver
                 area.addEllipse(m_eraserTrail.first(), m_eraserRadius, m_eraserRadius);
                 painter.drawPath(toView.map(area.simplified()));
             }
+        }
+    } else if (m_brushPainter) {
+        // The stroke as the brush paints it.
+        if (!m_brushPreview.isNull()) {
+            painter.setRenderHint(QPainter::SmoothPixmapTransform);
+            painter.setTransform(toView, true);
+            painter.drawImage(pixelToDocument(m_brushPreviewRect), m_brushPreview);
         }
     } else {
         painter.setPen(Qt::NoPen);
