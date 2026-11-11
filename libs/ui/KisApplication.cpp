@@ -6,6 +6,8 @@
  */
 
 #include "KisApplication.h"
+#include "KomaPaintStyle.h"
+#include <KomaPaintTokens.h>
 
 #include <stdlib.h>
 #ifdef Q_OS_WIN
@@ -144,6 +146,32 @@
 
 namespace {
 const QTime appStartTime(QTime::currentTime());
+
+/**
+ * One-time migration to the Koma Paint defaults for configurations created
+ * by Krita or by earlier Koma Paint builds. Each step runs once; later
+ * choices made by the user are kept.
+ */
+void applyKomaPaintDefaults()
+{
+    static const int currentDefaultsVersion = 1;
+
+    KConfigGroup komaGroup(KSharedConfig::openConfig(), "KomaPaint");
+    const int appliedVersion = komaGroup.readEntry("DefaultsVersion", 0);
+    if (appliedVersion >= currentDefaultsVersion) {
+        return;
+    }
+
+    if (appliedVersion < 1) {
+        KConfigGroup themeGroup(KSharedConfig::openConfig(), "theme");
+        themeGroup.writeEntry("Theme", KomaPaint::defaultThemeName());
+        KisConfig cfg(false);
+        cfg.setWidgetStyle(QString());
+    }
+
+    komaGroup.writeEntry("DefaultsVersion", currentDefaultsVersion);
+    komaGroup.sync();
+}
 }
 
 namespace {
@@ -243,19 +271,14 @@ KisApplication::KisApplication(const QString &key, int &argc, char **argv)
     setWindowIcon(KisIconUtils::loadIcon("krita-branding"));
 #endif
 
-           // if style is set from config, try to load that
+    applyKomaPaintDefaults();
+
+    // Use the style from the config; an empty entry means the Koma Paint style.
     KisConfig cfg(true);
     QString widgetStyleFromConfig = cfg.widgetStyle();
-    QString defaultStyle = style()->objectName().toLower();
-    if (!widgetStyleFromConfig.isEmpty()) {
+    if (!KomaPaintStyle::installIfRequested(widgetStyleFromConfig)) {
         qApp->setStyle(widgetStyleFromConfig);
     }
-#if defined Q_OS_WIN || defined Q_OS_MACOS || defined Q_OS_ANDROID
-    else {
-        // default to Fusion instead of styles that use native theming
-        qApp->setStyle("fusion");
-    }
-#endif
 
     /**
      * Load platform plugin for modifiers fetching
@@ -265,7 +288,9 @@ KisApplication::KisApplication(const QString &key, int &argc, char **argv)
     }
 
     // store the style name
-    qApp->setProperty(currentUnderlyingStyleNameProperty, style()->objectName());
+    if (!qobject_cast<KomaPaintStyle*>(style())) {
+        qApp->setProperty(currentUnderlyingStyleNameProperty, style()->objectName());
+    }
     KisSynchronizedConnectionBase::registerSynchronizedEventBarrier(std::bind(&KisApplication::processPostponedSynchronizationEvents, this));
 
 
@@ -549,7 +574,7 @@ bool KisApplication::start(const KisApplicationArguments &args)
     KConfigGroup group(KSharedConfig::openConfig(), "theme");
 #ifndef Q_OS_HAIKU
     Digikam::ThemeManager themeManager;
-    themeManager.setCurrentTheme(group.readEntry("Theme", "Krita dark"));
+    themeManager.setCurrentTheme(group.readEntry("Theme", KomaPaint::defaultThemeName()));
 #endif
 
     ResetStarting resetStarting(d->splashScreen, args.filenames().count()); // remove the splash when done

@@ -8,6 +8,8 @@
 */
 
 #include "KisMainWindow.h"
+#include "KomaPaintStyle.h"
+#include <KomaPaintTokens.h>
 
 #include <KoConfig.h>
 
@@ -377,7 +379,7 @@ KisMainWindow::KisMainWindow(QUuid uuid)
     d->viewManager = new KisViewManager(this, actionCollection());
     KConfigGroup group( KSharedConfig::openConfig(), "theme");
 #ifndef Q_OS_HAIKU
-    d->themeManager = new Digikam::ThemeManager(group.readEntry("Theme", "Krita dark"), this);
+    d->themeManager = new Digikam::ThemeManager(group.readEntry("Theme", KomaPaint::defaultThemeName()), this);
 #endif
     d->windowStateConfig = KSharedConfig::openConfig()->group("MainWindow");
 
@@ -446,6 +448,11 @@ KisMainWindow::KisMainWindow(QUuid uuid)
     QAction * action;
 
 #ifndef Q_OS_ANDROID
+
+    action = new QAction(i18nc("widget style name", "Koma Paint"), d->styleActions);
+    action->setCheckable(true);
+    d->actionMap.insert(KomaPaint::styleKey(), action);
+    d->styleMenu->addAction(action);
 
     Q_FOREACH (QString styleName, QStyleFactory::keys()) {
 
@@ -2572,8 +2579,10 @@ void KisMainWindow::slotUpdateWidgetStyle()
      Q_FOREACH (auto key, d->actionMap.keys()) { // find checked style to save to config
          if(d->actionMap.value(key)->isChecked()) {
             cfg.setWidgetStyle(key);
-            qApp->setProperty(currentUnderlyingStyleNameProperty, key);
-            qApp->setStyle(key);
+            if (!KomaPaintStyle::installIfRequested(key)) {
+                qApp->setProperty(currentUnderlyingStyleNameProperty, key);
+                qApp->setStyle(key);
+            }
 
             // When switching to a style that uses system colors, reset the theme
 #ifndef Q_OS_HAIKU
@@ -2933,7 +2942,7 @@ void KisMainWindow::configChanged()
 
     KConfigGroup group( KSharedConfig::openConfig(), "theme");
 #ifndef Q_OS_HAIKU
-    d->themeManager->setCurrentTheme(group.readEntry("Theme", "Krita dark"));
+    d->themeManager->setCurrentTheme(group.readEntry("Theme", KomaPaint::defaultThemeName()));
 #endif
     d->actionManager()->updateGUI();
 

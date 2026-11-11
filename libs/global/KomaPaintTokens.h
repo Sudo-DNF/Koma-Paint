@@ -9,6 +9,7 @@
 #include <QColor>
 #include <QPalette>
 #include <QRgb>
+#include <QString>
 
 /**
  * Koma Paint design-system tokens.
@@ -75,6 +76,43 @@ constexpr int pill = 999;
 inline bool isDarkPalette(const QPalette &palette)
 {
     return palette.color(QPalette::Window).lightness() < 128;
+}
+
+/// The token set matching a palette, resolved for light or dark themes.
+struct Theme {
+    QColor bg;
+    QColor surface;
+    QColor surfaceRaised;
+    QColor border;
+    QColor text;
+    QColor textMuted;
+    QColor pulse;
+    QColor pulseText;
+    QColor onPulse;
+};
+
+inline Theme themeFor(const QPalette &palette)
+{
+    if (isDarkPalette(palette)) {
+        return Theme{QColor(Dark::bg), QColor(Dark::surface), QColor(Dark::surfaceRaised),
+                     QColor(Dark::border), QColor(Dark::text), QColor(Dark::textMuted),
+                     QColor(Dark::pulse), QColor(Dark::pulseText), QColor(Dark::onPulse)};
+    }
+    return Theme{QColor(Light::bg), QColor(Light::surface), QColor(Light::surfaceRaised),
+                 QColor(Light::border), QColor(Light::text), QColor(Light::textMuted),
+                 QColor(Light::pulse), QColor(Light::pulseText), QColor(Light::onPulse)};
+}
+
+/// Name of the colour scheme Koma Paint starts with.
+inline QString defaultThemeName()
+{
+    return QStringLiteral("Koma Paint Dark");
+}
+
+/// Widget style key for the Koma Paint style.
+inline QString styleKey()
+{
+    return QStringLiteral("komapaint");
 }
 
 /// Pulse colour suitable for text on the given palette (AA contrast).

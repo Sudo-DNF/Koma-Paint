@@ -17,7 +17,7 @@
 #include <kis_icon.h>
 #include <klocalizedstring.h>
 
-#include "KomaPaintTokens.h"
+#include <KomaPaintTokens.h>
 
 namespace
 {

@@ -1,0 +1,13 @@
+<!DOCTYPE RCC>
+<!--
+  SPDX-FileCopyrightText: none
+  SPDX-License-Identifier: CC0-1.0
+-->
+<RCC version="1.0">
+    <qresource prefix="/uifonts">
+        <file>Inter-Regular.ttf</file>
+        <file>Inter-Medium.ttf</file>
+        <file>Inter-SemiBold.ttf</file>
+        <file>Inter-Bold.ttf</file>
+    </qresource>
+</RCC>

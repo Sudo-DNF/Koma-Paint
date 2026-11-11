@@ -52,7 +52,7 @@
 #include <QCoreApplication>
 #include <kis_debug.h>
 
-#include "KomaPaintTokens.h"
+#include <KomaPaintTokens.h>
 #include <QDir>
 
 #include <array>

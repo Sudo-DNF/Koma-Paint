@@ -170,6 +170,7 @@ set(kritaui_LIB_SRCS
     kis_multinode_property.cpp
     KisWelcomePageWidget.cpp
     KisUiFont.cpp
+    KomaPaintStyle.cpp
     KisIdleTasksManager.cpp
     KisIdleTaskStrokeStrategy.cpp
     KisImageThumbnailStrokeStrategy.cpp

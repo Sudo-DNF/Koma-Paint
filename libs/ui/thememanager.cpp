@@ -13,6 +13,7 @@
  * ============================================================ */
 
 #include "thememanager.h"
+#include <KomaPaintTokens.h>
 // Qt includes
 
 #include <QStringList>
@@ -109,7 +110,7 @@ QString ThemeManager::currentThemeName() const
     }
     if (themeName.isEmpty()) {
         //qDebug() << "\tfallback";
-        themeName = "Krita dark";
+        themeName = KomaPaint::defaultThemeName();
     }
     //qDebug() << "\tresult" << themeName;
     return themeName;

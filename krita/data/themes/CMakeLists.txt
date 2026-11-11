@@ -10,6 +10,8 @@ if (FOUNDATION_BUILD)
 endif()
 
 install(FILES
+KomaPaintDark.colors
+KomaPaintLight.colors
 KritaNeutral.colors
 KritaBlender.colors
 KritaBright.colors

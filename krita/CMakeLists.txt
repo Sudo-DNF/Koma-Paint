@@ -183,6 +183,7 @@ set(krita_QRCS
     ${CMAKE_SOURCE_DIR}/plugins/paintops/defaultpresets/defaultpresets.qrc
     ${CMAKE_SOURCE_DIR}/krita/pics/branding/${BRANDING}/branding.qrc
     ${CMAKE_SOURCE_DIR}/krita/data/splash/${krita_splash_qrc}
+    ${CMAKE_SOURCE_DIR}/krita/data/uifonts/uifonts.qrc
     ${CMAKE_SOURCE_DIR}/krita/pics/sponsors/sponsors.qrc
     CACHE INTERNAL "krita_QRCS"
 )

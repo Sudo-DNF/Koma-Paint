@@ -17,6 +17,7 @@
 #include <boost/optional.hpp>
 
 #include <QtGlobal>
+#include <QFile>
 #include <QFontDatabase>
 
 #if defined(Q_OS_WIN) && QT_VERSION < 0x060000
@@ -46,8 +47,39 @@ static boost::optional<QFont> userCfgUiFont();
 static QFont windowsSystemUiFont();
 #endif
 
+/**
+ * @brief Registers the Inter faces bundled in the application resources.
+ * @return true when the Koma Paint UI typeface is available.
+ */
+static bool registerBundledUiFonts()
+{
+    static const bool registered = []() {
+        const QStringList faces = {
+            QStringLiteral(":/uifonts/Inter-Regular.ttf"),
+            QStringLiteral(":/uifonts/Inter-Medium.ttf"),
+            QStringLiteral(":/uifonts/Inter-SemiBold.ttf"),
+            QStringLiteral(":/uifonts/Inter-Bold.ttf"),
+        };
+        bool any = false;
+        for (const QString &face : faces) {
+            if (QFile::exists(face) && QFontDatabase::addApplicationFont(face) >= 0) {
+                any = true;
+            }
+        }
+        return any || QFontDatabase::hasFamily(QStringLiteral("Inter"));
+    }();
+    return registered;
+}
+
 QFont systemDefaultUiFont()
 {
+    // Koma Paint's UI type: Inter, 13px, medium weight.
+    if (registerBundledUiFonts()) {
+        QFont font(QStringLiteral("Inter"));
+        font.setPixelSize(13);
+        font.setWeight(QFont::Medium);
+        return font;
+    }
 #if defined(Q_OS_WIN) && QT_VERSION < 0x060000
     return windowsSystemUiFont();
 #else

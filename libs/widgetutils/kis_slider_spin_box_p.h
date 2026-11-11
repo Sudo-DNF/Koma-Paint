@@ -39,6 +39,7 @@
 #include <kis_double_parse_spin_box.h>
 #include <kis_algebra_2d.h>
 #include <kis_signal_compressor_with_param.h>
+#include <KomaPaintTokens.h>
 
 template <typename SpinBoxTypeTP, typename BaseSpinBoxTypeTP>
 class Q_DECL_HIDDEN KisSliderSpinBoxPrivate : public QObject
@@ -591,6 +592,24 @@ public:
         }
     }
 
+    // Slider value fill: a muted tint of the accent, so a panel full of
+    // sliders does not turn into a wall of the accent colour.
+    QColor sliderFillColor() const
+    {
+        const QColor accent = m_q->palette().highlight().color();
+        const QColor base = m_q->palette().base().color();
+        const qreal amount = KomaPaint::isDarkPalette(m_q->palette()) ? 0.30 : 0.22;
+        return QColor::fromRgbF(base.redF() + (accent.redF() - base.redF()) * amount,
+                                base.greenF() + (accent.greenF() - base.greenF()) * amount,
+                                base.blueF() + (accent.blueF() - base.blueF()) * amount);
+    }
+
+    // Text over the muted fill keeps the normal text colour.
+    QColor sliderFillTextColor() const
+    {
+        return m_lineEdit->palette().text().color();
+    }
+
     // Generic "style aware" helper function to draw a rect
     void paintSliderRect(QPainter &painter, const QRectF &rect, const QBrush &brush)
     {
@@ -598,7 +617,8 @@ public:
         painter.setBrush(brush);
         painter.setPen(Qt::NoPen);
         if (qApp->property(currentUnderlyingStyleNameProperty).toString().toLower() == "fusion") {
-            painter.drawRoundedRect(rect, 1, 1);
+            painter.setRenderHint(QPainter::Antialiasing);
+            painter.drawRoundedRect(rect, KomaPaint::Radius::xs, KomaPaint::Radius::xs);
         } else {
             painter.drawRoundedRect(rect, 0, 0);
         }
@@ -622,13 +642,13 @@ public:
         // Draw portion of the text that is over the background
         paintSliderText(painter, text, rect, rect.adjusted(sliderRect.width(), 0, 0, 0), m_lineEdit->palette().text().color(), textOption);
         // Draw portion of the text that is over the progress bar
-        paintSliderText(painter, text, rect, sliderRect, m_lineEdit->palette().highlightedText().color(), textOption);
+        paintSliderText(painter, text, rect, sliderRect, sliderFillTextColor(), textOption);
     };
 
     void paintSlider(QPainter &painter, const QString &text, double slider01Width, double slider02Width = -1.0)
     {
         const QRectF rect = m_lineEdit->rect();
-        const QColor highlightColor = m_q->palette().highlight().color();
+        const QColor highlightColor = sliderFillColor();
         if (slider02Width < 0.0) {
             const QRectF sliderRect = rect.adjusted(0, 0, -(rect.width() - slider01Width), 0);
             paintSliderRect(painter, sliderRect, highlightColor);
@@ -664,13 +684,13 @@ public:
             paintSliderText(
                 painter, text, rect,
                 rect.adjusted(0, 0, -(rect.width() - slider02Width), softSliderAdjustment),
-                m_lineEdit->palette().highlightedText().color(),
+                sliderFillTextColor(),
                 textOption
             );
             paintSliderText(
                 painter, text, rect,
                 rect.adjusted(0, hardSliderAdjustment, -(rect.width() - slider01Width), 0),
-                m_lineEdit->palette().highlightedText().color(),
+                sliderFillTextColor(),
                 textOption
             );
         }

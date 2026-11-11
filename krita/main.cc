@@ -216,6 +216,11 @@ Java_org_krita_android_JNIWrappers_openFileFromIntent(JNIEnv* /*env*/,
 
 extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
 {
+    // The executable is called komapaint, but configuration, cache and
+    // resource locations keep the "krita" name. Set it before anything
+    // resolves a standard path or opens the main config file.
+    QCoreApplication::setApplicationName(QStringLiteral("krita"));
+
 #ifdef Q_OS_ANDROID
     KisAndroidUtils::performInitialSetup();
 #endif
