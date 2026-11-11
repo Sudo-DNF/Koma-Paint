@@ -9,6 +9,10 @@
 #include <QStringList>
 #include <QtMath>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 #include <klocalizedstring.h>
 
 #include <KoColorBackground.h>
@@ -224,18 +228,221 @@ QVector<KomaLineartPoint> KomaLineartShape::processRawStroke(const QVector<KomaL
         }
     }
 
-    QVector<bool> keep(smoothed.size(), false);
+    return simplify(smoothed, tolerance);
+}
+
+QVector<KomaLineartPoint> KomaLineartShape::simplify(const QVector<KomaLineartPoint> &points, qreal tolerance)
+{
+    if (points.size() < 3) {
+        return points;
+    }
+    QVector<bool> keep(points.size(), false);
     keep.first() = true;
     keep.last() = true;
-    simplifyRange(smoothed, 0, smoothed.size() - 1, tolerance, keep);
+    simplifyRange(points, 0, points.size() - 1, tolerance, keep);
 
     QVector<KomaLineartPoint> result;
-    for (int i = 0; i < smoothed.size(); ++i) {
+    for (int i = 0; i < points.size(); ++i) {
         if (keep[i]) {
-            result.append(smoothed[i]);
+            result.append(points[i]);
         }
     }
     return result;
+}
+
+QVector<KomaLineartPoint> KomaLineartShape::densify(const QVector<KomaLineartPoint> &points, qreal spacing)
+{
+    const int count = points.size();
+    if (count < 2 || spacing <= 0) {
+        return points;
+    }
+
+    QVector<KomaLineartPoint> dense;
+    dense.append(points.first());
+    for (int i = 0; i + 1 < count; ++i) {
+        // The same curve the outline follows (Catmull-Rom).
+        const QPointF p0 = points[qMax(i - 1, 0)].position;
+        const QPointF p1 = points[i].position;
+        const QPointF p2 = points[i + 1].position;
+        const QPointF p3 = points[qMin(i + 2, count - 1)].position;
+        const QPointF c1 = p1 + (p2 - p0) / 6.0;
+        const QPointF c2 = p2 - (p3 - p1) / 6.0;
+
+        const QPointF chord = p2 - p1;
+        const qreal length = qSqrt(chord.x() * chord.x() + chord.y() * chord.y());
+        const int steps = qMax(1, qCeil(length / spacing));
+        for (int s = 1; s <= steps; ++s) {
+            const qreal t = qreal(s) / steps;
+            const qreal u = 1.0 - t;
+            const QPointF position = u * u * u * p1 + 3 * u * u * t * c1 + 3 * u * t * t * c2 + t * t * t * p2;
+            const qreal width = points[i].width + (points[i + 1].width - points[i].width) * t;
+            dense.append({position, width});
+        }
+    }
+    return dense;
+}
+
+namespace
+{
+/// Distance from @p p to the polyline @p path.
+qreal distanceToPolyline(const QPointF &p, const QVector<QPointF> &path)
+{
+    if (path.isEmpty()) {
+        return std::numeric_limits<qreal>::max();
+    }
+    if (path.size() == 1) {
+        const QPointF d = p - path.first();
+        return qSqrt(d.x() * d.x() + d.y() * d.y());
+    }
+    qreal best = std::numeric_limits<qreal>::max();
+    for (int i = 0; i + 1 < path.size(); ++i) {
+        qreal t = 0;
+        best = qMin(best, segmentDistance(p, path[i], path[i + 1], &t));
+    }
+    return best;
+}
+
+/// Indices of the dense samples the eraser touches.
+QVector<bool> touchedSamples(const QVector<KomaLineartPoint> &dense, const QVector<QPointF> &eraserPath, qreal radius)
+{
+    QVector<bool> touched(dense.size(), false);
+    for (int i = 0; i < dense.size(); ++i) {
+        touched[i] = distanceToPolyline(dense[i].position, eraserPath) <= radius + dense[i].width / 2.0;
+    }
+    return touched;
+}
+
+/// The point at fractional index @p u along a dense line.
+KomaLineartPoint pointAt(const QVector<KomaLineartPoint> &dense, qreal u)
+{
+    const int i = qBound(0, int(std::floor(u)), dense.size() - 1);
+    const int j = qMin(i + 1, dense.size() - 1);
+    const qreal t = u - i;
+    return {dense[i].position + (dense[j].position - dense[i].position) * t,
+            dense[i].width + (dense[j].width - dense[i].width) * t};
+}
+
+/// The part of a dense line between fractional indices @p from and @p to.
+QVector<KomaLineartPoint> pieceBetween(const QVector<KomaLineartPoint> &dense, qreal from, qreal to)
+{
+    QVector<KomaLineartPoint> piece;
+    if (to - from <= 1e-6) {
+        return piece;
+    }
+    piece.append(pointAt(dense, from));
+    for (int i = int(std::floor(from)) + 1; i < to; ++i) {
+        piece.append(dense[i]);
+    }
+    piece.append(pointAt(dense, to));
+    return piece;
+}
+
+/// Fractional index along @p dense where segment i crosses segment q1-q2, if it does.
+bool crossing(const QPointF &p1, const QPointF &p2, const QPointF &q1, const QPointF &q2, qreal *t)
+{
+    const QPointF r = p2 - p1;
+    const QPointF s = q2 - q1;
+    const qreal denominator = r.x() * s.y() - r.y() * s.x();
+    if (qFuzzyIsNull(denominator)) {
+        return false;
+    }
+    const QPointF qp = q1 - p1;
+    const qreal a = (qp.x() * s.y() - qp.y() * s.x()) / denominator;
+    const qreal b = (qp.x() * r.y() - qp.y() * r.x()) / denominator;
+    if (a < 0 || a > 1 || b < 0 || b > 1) {
+        return false;
+    }
+    *t = a;
+    return true;
+}
+}
+
+QVector<QVector<KomaLineartPoint>> KomaLineartShape::eraseTouchedArea(const QVector<KomaLineartPoint> &dense,
+                                                                    const QVector<QPointF> &eraserPath,
+                                                                    qreal eraserRadius)
+{
+    const QVector<bool> touched = touchedSamples(dense, eraserPath, eraserRadius);
+
+    QVector<QVector<KomaLineartPoint>> pieces;
+    QVector<KomaLineartPoint> current;
+    for (int i = 0; i < dense.size(); ++i) {
+        if (touched[i]) {
+            if (current.size() >= 2) {
+                pieces.append(current);
+            }
+            current.clear();
+        } else {
+            current.append(dense[i]);
+        }
+    }
+    if (current.size() >= 2) {
+        pieces.append(current);
+    }
+    return pieces;
+}
+
+QVector<QVector<KomaLineartPoint>> KomaLineartShape::eraseUpToIntersection(const QVector<KomaLineartPoint> &dense,
+                                                                         const QVector<QPointF> &eraserPath,
+                                                                         qreal eraserRadius,
+                                                                         const QVector<QVector<QPointF>> &otherLines)
+{
+    const QVector<bool> touched = touchedSamples(dense, eraserPath, eraserRadius);
+    if (!touched.contains(true)) {
+        return {dense};
+    }
+
+    // Where this line crosses the others, as fractional sample indices.
+    QVector<qreal> crossings;
+    for (int i = 0; i + 1 < dense.size(); ++i) {
+        for (const QVector<QPointF> &other : otherLines) {
+            for (int k = 0; k + 1 < other.size(); ++k) {
+                qreal t = 0;
+                if (crossing(dense[i].position, dense[i + 1].position, other[k], other[k + 1], &t)) {
+                    crossings.append(i + t);
+                }
+            }
+        }
+    }
+    std::sort(crossings.begin(), crossings.end());
+
+    // Each touched sample removes the stretch between the crossings around it.
+    const qreal lastIndex = dense.size() - 1;
+    QVector<QPair<qreal, qreal>> removed;
+    for (int i = 0; i < dense.size(); ++i) {
+        if (!touched[i]) {
+            continue;
+        }
+        qreal from = 0.0;
+        qreal to = lastIndex;
+        for (qreal c : crossings) {
+            if (c <= i) {
+                from = c;
+            } else {
+                to = c;
+                break;
+            }
+        }
+        if (!removed.isEmpty() && from <= removed.last().second) {
+            removed.last().second = qMax(removed.last().second, to);
+        } else {
+            removed.append({from, to});
+        }
+    }
+
+    QVector<QVector<KomaLineartPoint>> pieces;
+    qreal keptFrom = 0.0;
+    for (const auto &range : removed) {
+        const QVector<KomaLineartPoint> piece = pieceBetween(dense, keptFrom, range.first);
+        if (piece.size() >= 2) {
+            pieces.append(piece);
+        }
+        keptFrom = range.second;
+    }
+    const QVector<KomaLineartPoint> tail = pieceBetween(dense, keptFrom, lastIndex);
+    if (tail.size() >= 2) {
+        pieces.append(tail);
+    }
+    return pieces;
 }
 
 void KomaLineartShape::rebuildOutline()

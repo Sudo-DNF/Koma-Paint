@@ -23,6 +23,7 @@ kis_add_tests(
     KisSafeDocumentLoaderTest.cpp
     KisSurfaceColorSpaceWrapperTest.cpp
     KisInputProfileManagerTest.cpp
+    KomaLineartShapeTest.cpp
 
     LINK_LIBRARIES kritaui kritalibkis kritatestsdk
     )

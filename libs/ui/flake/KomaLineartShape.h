@@ -87,6 +87,35 @@ public:
      */
     static QVector<KomaLineartPoint> processRawStroke(const QVector<KomaLineartPoint> &raw, qreal tolerance);
 
+    /// Removes points that do not change the line's shape or width profile.
+    static QVector<KomaLineartPoint> simplify(const QVector<KomaLineartPoint> &points, qreal tolerance);
+
+    /**
+     * Samples the smooth curve through @p points every @p spacing units,
+     * so that geometry tests can treat the line as a polyline.
+     */
+    static QVector<KomaLineartPoint> densify(const QVector<KomaLineartPoint> &points, qreal spacing);
+
+    /**
+     * Erases the parts of a (densified) line touched by an eraser that
+     * followed @p eraserPath with radius @p eraserRadius.
+     * @return the pieces of the line that remain.
+     */
+    static QVector<QVector<KomaLineartPoint>> eraseTouchedArea(const QVector<KomaLineartPoint> &dense,
+                                                              const QVector<QPointF> &eraserPath,
+                                                              qreal eraserRadius);
+
+    /**
+     * Erases each touched part of a (densified) line up to the nearest
+     * crossings with @p otherLines (or the line's ends), as Clip Studio
+     * Paint's "erase up to intersection" does.
+     * @return the pieces of the line that remain.
+     */
+    static QVector<QVector<KomaLineartPoint>> eraseUpToIntersection(const QVector<KomaLineartPoint> &dense,
+                                                                   const QVector<QPointF> &eraserPath,
+                                                                   qreal eraserRadius,
+                                                                   const QVector<QVector<QPointF>> &otherLines);
+
     // SvgShape
     bool saveSvg(SvgSavingContext &context) override;
     bool loadSvg(const QDomElement &element, SvgLoadingContext &context) override;

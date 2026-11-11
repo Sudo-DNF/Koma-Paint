@@ -8,6 +8,7 @@
  */
 
 #include "kis_tool_brush.h"
+#include <KomaLineartRecorder.h>
 #include <kis_icon.h>
 
 #include <QCheckBox>
@@ -419,6 +420,21 @@ QWidget * KisToolBrush::createOptionWidget()
                                  << i18nc("@item:inlistbox Brush Smoothing", "Pixel"));
     connect(m_cmbSmoothingType, SIGNAL(currentIndexChanged(int)), this, SLOT(slotSetSmoothingType(int)));
     addOptionWidgetOption(m_cmbSmoothingType, new QLabel(i18n("Brush Smoothing:"), optionsWidget));
+
+    // What the eraser does to lineart on vector layers.
+    QComboBox *vectorEraser = new QComboBox(optionsWidget);
+    vectorEraser->addItem(i18nc("@item:inlistbox Vector eraser mode", "Erase touched area"),
+                          int(KomaLineartRecorder::EraserMode::TouchedArea));
+    vectorEraser->addItem(i18nc("@item:inlistbox Vector eraser mode", "Erase up to intersection"),
+                          int(KomaLineartRecorder::EraserMode::UpToIntersection));
+    vectorEraser->addItem(i18nc("@item:inlistbox Vector eraser mode", "Erase whole line"),
+                          int(KomaLineartRecorder::EraserMode::WholeLine));
+    vectorEraser->setCurrentIndex(vectorEraser->findData(int(KomaLineartRecorder::eraserMode())));
+    vectorEraser->setToolTip(i18nc("@info:tooltip", "How eraser mode removes lineart on vector layers"));
+    connect(vectorEraser, QOverload<int>::of(&QComboBox::currentIndexChanged), vectorEraser, [vectorEraser](int index) {
+        KomaLineartRecorder::setEraserMode(KomaLineartRecorder::EraserMode(vectorEraser->itemData(index).toInt()));
+    });
+    addOptionWidgetOption(vectorEraser, new QLabel(i18n("Vector Eraser:"), optionsWidget));
 
     // Smoothness Distance
     m_sliderSmoothnessDistanceMin = new KisDoubleSliderSpinBox(optionsWidget);

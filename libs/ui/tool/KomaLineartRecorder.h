@@ -15,24 +15,36 @@
 #include <kis_types.h>
 
 #include "flake/KomaLineartShape.h"
+#include "kritaui_export.h"
 
 class QPainter;
 class KoViewConverter;
 class KisCanvas2;
 class KisShapeLayer;
+class KUndo2Command;
 
 /**
  * Records a brush-tool stroke on a vector layer.
  *
  * In ink mode the stroke becomes a KomaLineartShape: the pen positions and
  * the width from pen pressure form the line's centerline, which is smoothed
- * and simplified when the stroke ends. In eraser mode every lineart stroke
- * the eraser touches is removed when the stroke ends ("erase whole line").
- * Both are single undo steps.
+ * and simplified when the stroke ends. In eraser mode the stroke erases
+ * lineart in one of three ways (see EraserMode). Either is one undo step.
  */
-class KomaLineartRecorder
+class KRITAUI_EXPORT KomaLineartRecorder
 {
 public:
+    /// How the eraser treats lineart, as in Clip Studio Paint.
+    enum class EraserMode {
+        TouchedArea = 0,     ///< Erase only where the eraser passes.
+        UpToIntersection,    ///< Erase up to the nearest crossing lines.
+        WholeLine,           ///< Erase every line the eraser touches.
+    };
+
+    /// The eraser mode chosen in the brush tool options.
+    static EraserMode eraserMode();
+    static void setEraserMode(EraserMode mode);
+
     KomaLineartRecorder();
 
     bool isActive() const;
@@ -53,6 +65,7 @@ public:
 private:
     qreal widthForPressure(qreal pressure) const;
     void collectErasedLines(const QPointF &documentPoint);
+    void applyPartialErase(KUndo2Command *parent);
     void requestUpdate(const QRectF &documentRect);
     QRectF previewBounds() const;
 
@@ -67,6 +80,8 @@ private:
     QPainterPath m_preview;     ///< Outline of the stroke so far, document units.
 
     qreal m_eraserRadius {1.0};
+    EraserMode m_eraserMode {EraserMode::UpToIntersection};
+    QVector<QPointF> m_eraserTrail;  ///< Eraser positions, document units.
     QSet<KomaLineartShape*> m_erased;
 };
 

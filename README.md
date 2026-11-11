@@ -34,8 +34,12 @@ Development used AI coding assistants; the app itself contains no generative AI 
 
 Koma Paint is in active development. Vector lineart is arriving in steps:
 
-- **Available now:** with a brush tool on a vector layer, every stroke becomes an editable ink line. It keeps its pen-pressure width profile and stays crisp at any zoom or scale. Eraser mode removes whole lines.
-- **Next:** erasing up to the nearest intersection or just the touched part of a line, followed by control points, line width correction, simplifying and connecting lines.
+- **Available now:** with a brush tool on a vector layer, every stroke becomes an editable ink line. It keeps its pen-pressure width profile and stays crisp at any zoom or scale.
+- **Vector eraser:** eraser mode has three settings, chosen in the brush tool options:
+  - erase the touched area;
+  - erase up to intersection: clean up overshoots where lines cross;
+  - erase whole line.
+- **Next:** control points, line width correction, simplifying and connecting lines.
 
 Lineart lines are saved in `.kra` files and export to SVG as ordinary filled paths.
 

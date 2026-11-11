@@ -5,7 +5,11 @@
  */
 #include "KomaLineartRecorder.h"
 
+#include <QHash>
 #include <QPainter>
+#include <QPainterPathStroker>
+
+#include <kis_config.h>
 
 #include <kundo2command.h>
 #include <klocalizedstring.h>
@@ -28,6 +32,19 @@ constexpr qreal minimumPressureWidth = 0.15;
 
 /// Simplification tolerance, in image pixels.
 constexpr qreal simplifyTolerancePixels = 0.35;
+
+const QString eraserModeKey = QStringLiteral("KomaPaint/VectorEraserMode");
+}
+
+KomaLineartRecorder::EraserMode KomaLineartRecorder::eraserMode()
+{
+    const int stored = KisConfig(true).readEntry<int>(eraserModeKey, int(EraserMode::UpToIntersection));
+    return EraserMode(qBound(0, stored, int(EraserMode::WholeLine)));
+}
+
+void KomaLineartRecorder::setEraserMode(EraserMode mode)
+{
+    KisConfig(false).writeEntry<int>(eraserModeKey, int(mode));
 }
 
 KomaLineartRecorder::KomaLineartRecorder()
@@ -58,6 +75,8 @@ bool KomaLineartRecorder::begin(KisCanvas2 *canvas, KisShapeLayer *layer, const 
     m_raw.clear();
     m_preview = QPainterPath();
     m_erased.clear();
+    m_eraserTrail.clear();
+    m_eraserMode = eraserMode();
 
     // Brush size is in image pixels; shapes live in document units.
     const qreal pixelsPerUnit = qMax(canvas->image()->xRes(), 1e-6);
@@ -102,8 +121,12 @@ void KomaLineartRecorder::collectErasedLines(const QPointF &documentPoint)
     if (!m_layer) {
         return;
     }
+    if (m_eraserTrail.isEmpty() || m_eraserTrail.last() != documentPoint) {
+        m_eraserTrail.append(documentPoint);
+    }
     QPainterPath eraser;
     eraser.addEllipse(documentPoint, m_eraserRadius, m_eraserRadius);
+    requestUpdate(eraser.boundingRect());
 
     const QList<KoShape*> shapes = m_layer->shapes();
     for (KoShape *shape : shapes) {
@@ -130,12 +153,16 @@ void KomaLineartRecorder::finish()
     if (m_canvas && m_layer) {
         if (m_erase) {
             if (!m_erased.isEmpty()) {
-                QList<KoShape*> shapes;
-                for (KomaLineartShape *line : std::as_const(m_erased)) {
-                    shapes.append(line);
+                KUndo2Command *command = new KUndo2Command(kundo2_i18n("Erase Lines"));
+                if (m_eraserMode == EraserMode::WholeLine) {
+                    QList<KoShape*> shapes;
+                    for (KomaLineartShape *line : std::as_const(m_erased)) {
+                        shapes.append(line);
+                    }
+                    m_canvas->shapeController()->removeShapes(shapes, command);
+                } else {
+                    applyPartialErase(command);
                 }
-                KUndo2Command *command = m_canvas->shapeController()->removeShapes(shapes);
-                command->setText(kundo2_i18n("Erase Lines"));
                 m_canvas->addCommand(command);
             }
         } else if (!m_raw.isEmpty()) {
@@ -156,7 +183,70 @@ void KomaLineartRecorder::finish()
     m_raw.clear();
     m_preview = QPainterPath();
     m_erased.clear();
+    m_eraserTrail.clear();
     requestUpdate(dirty);
+}
+
+void KomaLineartRecorder::applyPartialErase(KUndo2Command *parent)
+{
+    const qreal pixelsPerUnit = qMax(m_canvas->image()->xRes(), 1e-6);
+    const qreal spacing = qMax(m_eraserRadius / 3.0, 0.5 / pixelsPerUnit);
+    const qreal tolerance = simplifyTolerancePixels / pixelsPerUnit;
+
+    // Lines crossing the erased ones bound "erase up to intersection".
+    QVector<QVector<QPointF>> allLines;
+    QHash<KomaLineartShape*, int> lineIndex;
+    QVector<QVector<KomaLineartPoint>> denseLines;
+    if (m_eraserMode == EraserMode::UpToIntersection) {
+        const QList<KoShape*> shapes = m_layer->shapes();
+        for (KoShape *shape : shapes) {
+            KomaLineartShape *line = dynamic_cast<KomaLineartShape*>(shape);
+            if (!line || !line->isVisible()) {
+                continue;
+            }
+            const QVector<KomaLineartPoint> dense = KomaLineartShape::densify(line->centerlineInDocument(), spacing);
+            QVector<QPointF> polyline;
+            polyline.reserve(dense.size());
+            for (const KomaLineartPoint &point : dense) {
+                polyline.append(point.position);
+            }
+            lineIndex.insert(line, allLines.size());
+            allLines.append(polyline);
+            denseLines.append(dense);
+        }
+    }
+
+    for (KomaLineartShape *line : std::as_const(m_erased)) {
+        QVector<KomaLineartPoint> dense;
+        QVector<QVector<KomaLineartPoint>> pieces;
+        if (m_eraserMode == EraserMode::UpToIntersection) {
+            const int own = lineIndex.value(line, -1);
+            dense = own >= 0 ? denseLines[own] : KomaLineartShape::densify(line->centerlineInDocument(), spacing);
+            QVector<QVector<QPointF>> others;
+            for (int i = 0; i < allLines.size(); ++i) {
+                if (i != own) {
+                    others.append(allLines[i]);
+                }
+            }
+            pieces = KomaLineartShape::eraseUpToIntersection(dense, m_eraserTrail, m_eraserRadius, others);
+        } else {
+            dense = KomaLineartShape::densify(line->centerlineInDocument(), spacing);
+            pieces = KomaLineartShape::eraseTouchedArea(dense, m_eraserTrail, m_eraserRadius);
+        }
+
+        if (pieces.size() == 1 && pieces.first().size() == dense.size()) {
+            continue; // the eraser only grazed the outline
+        }
+
+        m_canvas->shapeController()->removeShape(line, parent);
+        for (const QVector<KomaLineartPoint> &piece : pieces) {
+            KomaLineartShape *remaining = new KomaLineartShape();
+            remaining->setLineColor(line->lineColor());
+            remaining->setZIndex(line->zIndex());
+            remaining->setCenterlineInDocument(KomaLineartShape::simplify(piece, tolerance));
+            m_canvas->shapeController()->addShape(remaining, m_layer, parent);
+        }
+    }
 }
 
 void KomaLineartRecorder::cancel()
@@ -200,11 +290,29 @@ void KomaLineartRecorder::paint(QPainter &painter, const KoViewConverter &conver
     const QTransform toView = converter.documentToView();
 
     if (m_erase) {
-        // Lines that will be erased are drawn in a muted grey.
         painter.setPen(Qt::NoPen);
         painter.setBrush(QColor(128, 128, 128, 160));
-        for (KomaLineartShape *line : m_erased) {
-            painter.drawPath(toView.map(line->absoluteTransformation().map(line->outline())));
+        if (m_eraserMode == EraserMode::WholeLine) {
+            // Lines that will be erased are drawn in a muted grey.
+            for (KomaLineartShape *line : m_erased) {
+                painter.drawPath(toView.map(line->absoluteTransformation().map(line->outline())));
+            }
+        } else {
+            // The eraser's path, which decides what is removed.
+            QPainterPathStroker stroker;
+            stroker.setWidth(2 * m_eraserRadius);
+            stroker.setCapStyle(Qt::RoundCap);
+            stroker.setJoinStyle(Qt::RoundJoin);
+            QPainterPath trail;
+            if (!m_eraserTrail.isEmpty()) {
+                trail.moveTo(m_eraserTrail.first());
+                for (const QPointF &point : m_eraserTrail) {
+                    trail.lineTo(point);
+                }
+                QPainterPath area = stroker.createStroke(trail);
+                area.addEllipse(m_eraserTrail.first(), m_eraserRadius, m_eraserRadius);
+                painter.drawPath(toView.map(area.simplified()));
+            }
         }
     } else {
         painter.setPen(Qt::NoPen);
