@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 
 SERVER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "komapaint_mcp.py")
@@ -103,6 +104,38 @@ class ProtocolTest(unittest.TestCase):
         self.client.initialize()
         reply = self.client.request("resources/list")
         self.assertEqual(reply["error"]["code"], -32601)
+
+    def _fake_prefix(self, script):
+        """A prefix whose bin/komapaint is a shell script, standing in for Koma Paint."""
+        prefix = tempfile.mkdtemp(prefix="komapaint-mcp-test-")
+        self.addCleanup(lambda: subprocess.run(["rm", "-rf", prefix]))
+        os.makedirs(os.path.join(prefix, "bin"))
+        executable = os.path.join(prefix, "bin", "komapaint")
+        with open(executable, "w") as stream:
+            stream.write("#!/bin/sh\n" + script)
+        os.chmod(executable, 0o755)
+        return prefix
+
+    def _launch_error(self, arguments):
+        self.client.initialize()
+        result = self.client.request("tools/call", {"name": "app_launch", "arguments": arguments})["result"]
+        self.assertTrue(result["isError"])
+        return result["content"][0]["text"]
+
+    def test_isolated_launch_gets_private_tmpdir(self):
+        # Exits straight away, as Krita does when it finds another instance.
+        prefix = self._fake_prefix('echo "TMPDIR=$TMPDIR"\nexit 3\n')
+        text = self._launch_error({"prefix": prefix, "headless": True, "timeout": 10})
+        tmp = [line[len("TMPDIR="):] for line in text.splitlines() if line.startswith("TMPDIR=")]
+        self.assertEqual(len(tmp), 1, text)
+        self.assertRegex(tmp[0], r"komapaint-mcp-profile-[^/]+/tmp$")
+        self.assertFalse(os.path.exists(tmp[0]), "profile not removed after a failed launch")
+
+    def test_exit_zero_reports_running_instance(self):
+        prefix = self._fake_prefix("exit 0\n")
+        text = self._launch_error({"prefix": prefix, "isolated": False, "headless": True, "timeout": 10})
+        self.assertIn("Another Koma Paint is probably already running", text)
+        self.assertIn("app_attach", text)
 
     def test_status_before_launch(self):
         self.client.initialize()

@@ -146,6 +146,7 @@ class AppProcess:
         self._log_counter = itertools.count(1)
         self._log_lock = threading.Lock()
         self.command = None
+        self.pump = None
 
     def running(self):
         return self.process is not None and self.process.poll() is None
@@ -195,6 +196,13 @@ class AppProcess:
             env["XDG_DATA_HOME"] = os.path.join(self.profile_dir, "data")
             env["XDG_CACHE_HOME"] = os.path.join(self.profile_dir, "cache")
             env["XDG_STATE_HOME"] = os.path.join(self.profile_dir, "state")
+            # Krita's single-instance check keeps its lock file and local
+            # socket in QDir::tempPath(). A private TMPDIR keeps this instance
+            # from handing its arguments to another running Koma Paint and
+            # exiting straight away.
+            tmp_dir = os.path.join(self.profile_dir, "tmp")
+            os.makedirs(tmp_dir)
+            env["TMPDIR"] = tmp_dir
         if headless:
             # Some start-up code talks to X11 directly whenever DISPLAY is set,
             # so a headless session must not see the desktop's display at all.
@@ -208,7 +216,8 @@ class AppProcess:
         self.process = subprocess.Popen(self.command, env=env, stdin=subprocess.DEVNULL,
                                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                         start_new_session=True)
-        threading.Thread(target=self._pump, args=(self.process.stdout,), daemon=True).start()
+        self.pump = threading.Thread(target=self._pump, args=(self.process.stdout,), daemon=True)
+        self.pump.start()
         return port, token
 
     def stop(self, timeout=10.0):
@@ -277,8 +286,10 @@ WIDGET = {"type": "string", "description": "Widget path id from ui_tree / ui_fin
 # name -> (bridge method or None for local tools, description, input schema)
 TOOLS = {
     "app_launch": (None, "Start Koma Paint with the MCP bridge enabled and connect to it. By default it runs "
-                   "in a fresh throwaway profile so tests start from default settings; pass isolated=false "
-                   "to use the user's own profile. headless=true uses Qt's offscreen platform (no window).",
+                   "in a fresh throwaway profile (with its own TMPDIR, so it starts as a separate instance even "
+                   "when another Koma Paint is open) so tests start from default settings; pass isolated=false "
+                   "to use the user's own profile, which fails while another Koma Paint is running (use "
+                   "app_attach then). headless=true uses Qt's offscreen platform (no window).",
                    schema({"isolated": BOOL, "headless": BOOL, "files": {"type": "array", "items": STR},
                            "args": {"type": "array", "items": STR}, "env": {"type": "object"},
                            "prefix": STR, "timeout": NUM})),
@@ -444,9 +455,18 @@ class Server:
         last_error = None
         while time.time() < deadline:
             if not self.app.running():
+                code = self.app.process.returncode if self.app.process else None
+                if self.app.pump:
+                    self.app.pump.join(2.0)  # read the last output before quoting it
+                output = "\n".join(line for _, _, line in self.app.log_lines(limit=40))
+                if code == 0:
+                    raise ToolError("Koma Paint exited with code 0 before the bridge came up. Another Koma Paint "
+                                    "is probably already running for this user: Krita's single-instance check "
+                                    "handed the arguments to it and quit. Use app_attach to drive the running "
+                                    "instance, or app_launch with isolated=true (the default) to start a "
+                                    "separate one. Last output:\n%s" % output)
                 raise ToolError("Koma Paint exited with code %s before the bridge came up. Last output:\n%s"
-                                % (self.app.process.returncode if self.app.process else "?",
-                                   "\n".join(line for _, _, line in self.app.log_lines(limit=40))))
+                                % ("?" if code is None else code, output))
             try:
                 return self.bridge.connect("127.0.0.1", port, token)
             except (OSError, ToolError) as error:
@@ -462,7 +482,11 @@ class Server:
         prefix = args.get("prefix") or default_prefix()
         port, token = self.app.start(prefix, list(args.get("args", [])) + list(args.get("files", [])),
                                      args.get("env"), args.get("isolated", True), args.get("headless", False))
-        hello = self._wait_for_bridge(port, token, float(args.get("timeout", 180)))
+        try:
+            hello = self._wait_for_bridge(port, token, float(args.get("timeout", 180)))
+        except ToolError:
+            self.app.stop()
+            raise
         return {"pid": self.app.process.pid, "version": hello.get("version"), "port": port,
                 "profile": self.app.profile_dir, "command": self.app.command,
                 "log_lines": self.app.last_log_number()}

@@ -21,10 +21,10 @@ The server looks for `bin/komapaint` in `$KOMA_PAINT_PREFIX`, then in the `insta
 
 ## Two ways to connect
 
-**Launch a test instance** with `app_launch`. Koma Paint starts with the bridge enabled for that session only. By default it uses a throwaway profile, so every test starts from the default settings, workspace and resources; the profile is deleted on `app_quit`. Options:
+**Launch a test instance** with `app_launch`. Koma Paint starts with the bridge enabled for that session only. By default it uses a throwaway profile, so every test starts from the default settings, workspace and resources; the profile is deleted on `app_quit`. The profile also holds a private `TMPDIR`, because Krita's single-instance check keeps its lock file and socket in the temp folder: without it, a launch while another Koma Paint is open would hand its arguments to that instance and exit. Options:
 
 - `headless: true` uses Qt's offscreen platform: no window appears, and everything else works, screenshots included. The window starts at 800×800; use `ui_resize_window` for a real screen size.
-- `isolated: false` uses your own profile instead.
+- `isolated: false` uses your own profile and the normal temp folder instead. If another Koma Paint is already running for your user, the new process passes its arguments to it and exits with code 0; `app_launch` then reports that and suggests `app_attach` or `isolated: true`.
 - `files` opens files at start-up; `env` adds environment variables.
 
 `app_logs` returns Koma Paint's stdout and stderr: warnings, Python tracebacks and crash output. Pass `since` with the last line number to read only new lines.
