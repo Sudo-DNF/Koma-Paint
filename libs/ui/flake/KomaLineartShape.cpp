@@ -48,8 +48,13 @@
 #include <tuple>
 #include <KoCompositeOpRegistry.h>
 #include <QPainter>
+#include <QtConcurrentMap>
+#include <KisRunnableStrokeJobsInterface.h>
+#include <KisRunnableStrokeJobDataBase.h>
+#include <kis_stroke_job_strategy.h>
 #include <QCoreApplication>
 #include <QThread>
+#include <QThreadPool>
 
 namespace
 {
@@ -140,12 +145,61 @@ LineartRenderStore &renderStore()
  * the same size and in the same colour. Lines drawn in one stroke share their
  * snapshot, and an edited line keeps its own.
  */
+/**
+ * Runs the jobs a brush engine hands out (dab rendering, and blitting the
+ * dabs into parts of the device) as a stroke would: jobs marked concurrent
+ * that follow one another run in parallel, every other job runs alone, in
+ * order. Each job writes its own dab or its own part of the device, so the
+ * pixels do not depend on how the jobs are spread over threads.
+ *
+ * The jobs run on a thread pool of their own: lines are rendered from the
+ * global pool's threads (a vector layer repaints in parallel), and jobs
+ * queued behind those waiting threads would never run.
+ */
+class ConcurrentStrokeJobsExecutor : public KisRunnableStrokeJobsInterface
+{
+public:
+    using KisRunnableStrokeJobsInterface::addRunnableJobs;
+
+    void addRunnableJobs(const QVector<KisRunnableStrokeJobDataBase*> &list) override
+    {
+        QVector<KisRunnableStrokeJobDataBase*> batch;
+        auto runBatch = [&batch]() {
+            if (batch.size() == 1) {
+                batch.first()->run();
+            } else if (!batch.isEmpty()) {
+                QtConcurrent::blockingMap(&jobPool(), batch, [](KisRunnableStrokeJobDataBase *job) { job->run(); });
+            }
+            batch.clear();
+        };
+        for (KisRunnableStrokeJobDataBase *job : list) {
+            if (job->sequentiality() == KisStrokeJobData::CONCURRENT
+                    && job->exclusivity() == KisStrokeJobData::NORMAL) {
+                batch.append(job);
+            } else {
+                runBatch();
+                job->run();
+            }
+        }
+        runBatch();
+        qDeleteAll(list);
+    }
+
+private:
+    static QThreadPool &jobPool()
+    {
+        static QThreadPool pool;
+        return pool;
+    }
+};
+
 struct BrushRenderContext {
     KisPaintOpPresetSP source;   ///< The snapshot the context paints with.
     qreal paintOpSize {0};
     QRgb color {0};
     KisImageSP image;
     KisPaintLayerSP layer;
+    ConcurrentStrokeJobsExecutor jobs;
     std::unique_ptr<KisPainter> painter;
 
     bool matches(const KisPaintOpPresetSP &brush, qreal size, QRgb rgba) const
@@ -517,6 +571,7 @@ QImage KomaLineartShape::renderWithBrush(qreal scale, QRectF *localRect) const
         painter.setBackgroundColor(KoColor(Qt::white, colorSpace));
         painter.setCompositeOpId(COMPOSITE_OVER);
         painter.setOpacityF(preset->settings()->paintOpOpacity());
+        painter.setRunnableStrokeJobsInterface(&context->jobs);
         painter.setPaintOpPreset(preset, context->layer, context->image);
         if (!painter.paintOp()) {
             return QImage();
@@ -545,11 +600,9 @@ QImage KomaLineartShape::renderWithBrush(qreal scale, QRectF *localRect) const
         QVector<KisRunnableStrokeJobData*> jobs;
         bool needsMoreUpdates = false;
         std::tie(std::ignore, needsMoreUpdates) = brushPainter.paintOp()->doAsynchronousUpdate(jobs);
-        for (KisRunnableStrokeJobData *job : jobs) {
-            job->run();
-            delete job;
-        }
-        if (jobs.isEmpty() && !needsMoreUpdates) {
+        const bool noJobs = jobs.isEmpty();
+        context->jobs.addRunnableJobs(jobs);
+        if (noJobs && !needsMoreUpdates) {
             break;
         }
     }
