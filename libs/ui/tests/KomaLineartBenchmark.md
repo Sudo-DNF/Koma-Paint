@@ -13,8 +13,9 @@ the way `KomaLineartRecorder` builds lines.
   event, and the geometry computed when the pen is lifted.
 - **Control point drag** and **Adjust Line Width:** a continuous drag of 240
   edits at 120 Hz with the event loop running, reporting the time each edit
-  takes and the interval between the updates the layer's projection receives
-  (the frame rate while dragging); then 60 single edits, each timed until the
+  takes, the interval between the updates the layer's projection receives
+  (the frame rate while dragging) and how long the oldest change not on
+  screen yet waits for the update that shows it; then 60 single edits, each timed until the
   projection shows it; then 60 edits whose dirty-region repaint is timed
   alone, with the largest share of the layer one edit marks dirty.
 - **Layer repaint:** the whole vector layer regenerated with cold and warm
@@ -118,61 +119,86 @@ p50 39 ms instead of 19 ms).
 
 ## Results
 
-Commit d4a6a3f, same machine and build type. Milliseconds.
+Commit 3a0a757, same machine and build type. Milliseconds.
 
 | Measurement | p50 | p95 | max |
 | --- | ---: | ---: | ---: |
-| Ink stroke over 220 lines (640 samples): per input event | 0.060 | 0.105 | 0.323 |
-| Ink stroke over 220 lines: preview frame at 100% | 0.009 | 0.013 | 0.061 |
-| Ink stroke over 220 lines: preview frame at 400% | 0.103 | 0.146 | 0.271 |
-| Eraser touched-area over 220 lines (400 samples): per input event | 0.058 | 0.108 | 0.139 |
-| Eraser touched-area over 220 lines (400 samples): overlay frame at 100% | 0.867 | 1.320 | 1.690 |
-| Eraser touched-area over 220 lines (400 samples): overlay frame at 400% | 0.726 | 1.150 | 1.359 |
-| Eraser touched-area over 220 lines (400 samples): release geometry | 4.337 | 4.351 | 4.427 |
-| Eraser up-to-intersection over 220 lines (400 samples): per input event | 0.058 | 0.104 | 0.146 |
-| Eraser up-to-intersection over 220 lines (400 samples): overlay frame at 100% | 0.863 | 1.327 | 1.708 |
-| Eraser up-to-intersection over 220 lines (400 samples): overlay frame at 400% | 0.718 | 1.079 | 1.368 |
-| Eraser up-to-intersection over 220 lines (400 samples): release geometry | 25.236 | 25.319 | 26.194 |
-| Eraser whole-line over 220 lines (400 samples): per input event | 0.054 | 0.105 | 0.141 |
-| Eraser whole-line over 220 lines (400 samples): overlay frame at 100% | 1.682 | 6.481 | 17.092 |
-| Eraser whole-line over 220 lines (400 samples): overlay frame at 400% | 2.202 | 6.249 | 11.089 |
-| Control point drag over 220 lines: per input event | 0.091 | 0.152 | 0.210 |
-| Control point drag over 220 lines: projection update interval during a 120 Hz drag | 11.681 | 18.213 | 22.547 |
-| Control point drag over 220 lines: single edit to projection updated | 9.968 | 12.132 | 12.718 |
-| Control point drag over 220 lines: dirty-region layer repaint | 12.867 | 13.429 | 14.298 |
-| Adjust Line Width over 220 lines: per input event | 1.339 | 3.253 | 4.269 |
-| Adjust Line Width over 220 lines: projection update interval during a 120 Hz drag | 10.192 | 25.082 | 91.572 |
-| Adjust Line Width over 220 lines: single edit to projection updated | 8.911 | 18.898 | 21.473 |
-| Adjust Line Width over 220 lines: dirty-region layer repaint | 7.537 | 12.337 | 12.589 |
-| Full vector layer repaint, 220 lines, cold render cache | 439.527 | 439.527 | 444.112 |
-| Full vector layer repaint, 220 lines, warm render cache | 32.475 | 32.475 | 32.526 |
-| Lines painted directly at 100% of image resolution into a 1920x1080 view, first pass | 16.685 | 18.117 | 18.313 |
-| Lines painted directly at 100% of image resolution into a 1920x1080 view, repeated | 16.712 | 18.288 | 18.411 |
-| Lines painted directly at 400% of image resolution into a 1920x1080 view, first pass | 151.097 | 624.908 | 704.586 |
-| Lines painted directly at 400% of image resolution into a 1920x1080 view, repeated | 153.114 | 625.601 | 699.486 |
+| Ink stroke over 220 lines (640 samples): per input event | 0.063 | 0.107 | 0.268 |
+| Ink stroke over 220 lines: preview frame at 100% | 0.009 | 0.012 | 0.063 |
+| Ink stroke over 220 lines: preview frame at 400% | 0.098 | 0.151 | 0.232 |
+| Eraser touched-area over 220 lines (400 samples): per input event | 0.057 | 0.103 | 0.135 |
+| Eraser touched-area over 220 lines (400 samples): overlay frame at 100% | 0.864 | 1.321 | 1.642 |
+| Eraser touched-area over 220 lines (400 samples): overlay frame at 400% | 0.700 | 1.088 | 1.387 |
+| Eraser touched-area over 220 lines (400 samples): release geometry | 4.299 | 4.359 | 4.450 |
+| Eraser up-to-intersection over 220 lines (400 samples): per input event | 0.060 | 0.108 | 0.139 |
+| Eraser up-to-intersection over 220 lines (400 samples): overlay frame at 100% | 0.844 | 1.311 | 1.618 |
+| Eraser up-to-intersection over 220 lines (400 samples): overlay frame at 400% | 0.710 | 1.061 | 1.144 |
+| Eraser up-to-intersection over 220 lines (400 samples): release geometry | 24.695 | 24.795 | 25.701 |
+| Eraser whole-line over 220 lines (400 samples): per input event | 0.054 | 0.106 | 0.152 |
+| Eraser whole-line over 220 lines (400 samples): overlay frame at 100% | 1.722 | 6.689 | 17.116 |
+| Eraser whole-line over 220 lines (400 samples): overlay frame at 400% | 2.199 | 6.245 | 10.940 |
+| Control point drag over 220 lines: per input event | 0.103 | 0.159 | 0.256 |
+| Control point drag over 220 lines: projection update interval during a 120 Hz drag | 8.318 | 10.763 | 12.129 |
+| Control point drag over 220 lines: oldest change to projection updated during a 120 Hz drag | 6.426 | 7.978 | 12.062 |
+| Control point drag over 220 lines: single edit to projection updated | 7.129 | 7.742 | 8.074 |
+| Control point drag over 220 lines: dirty-region layer repaint | 7.115 | 7.541 | 8.089 |
+| Adjust Line Width over 220 lines: per input event | 1.581 | 3.691 | 5.258 |
+| Adjust Line Width over 220 lines: projection update interval during a 120 Hz drag | 9.481 | 19.571 | 85.783 |
+| Adjust Line Width over 220 lines: oldest change to projection updated during a 120 Hz drag | 5.690 | 13.829 | 28.072 |
+| Adjust Line Width over 220 lines: single edit to projection updated | 8.951 | 12.930 | 14.599 |
+| Adjust Line Width over 220 lines: dirty-region layer repaint | 7.407 | 9.396 | 10.267 |
+| Full vector layer repaint, 220 lines, cold render cache | 433.303 | 433.303 | 436.286 |
+| Full vector layer repaint, 220 lines, warm render cache | 32.442 | 32.442 | 33.164 |
+| Lines painted directly at 100% of image resolution into a 1920x1080 view, first pass | 16.839 | 18.312 | 18.514 |
+| Lines painted directly at 100% of image resolution into a 1920x1080 view, repeated | 17.080 | 18.449 | 18.488 |
+| Lines painted directly at 400% of image resolution into a 1920x1080 view, first pass | 145.192 | 624.888 | 704.588 |
+| Lines painted directly at 400% of image resolution into a 1920x1080 view, repeated | 144.380 | 624.716 | 701.861 |
 
 Largest share of the layer one edit marks dirty: 3.0% (control point), 4.5%
 (adjust width).
 
-Every per-input-event cost is now under 8 ms at p95 (the slowest, Adjust Line
-Width, 3.3 ms) and under 16 ms at max, and the dirty-region repaint after an
-edit is under 16 ms at p95 (13.4 ms for a control point, 12.3 ms for a width
-change). The whole-line eraser overlay fell from 14.3 to 6.5 ms at p95, the
+Every per-input-event cost is under 8 ms at p95 (the slowest, Adjust Line
+Width, 3.7 ms) and under 16 ms at max. The dirty-region repaint after an edit
+is under 16 ms at p95 and at max (7.5 ms for a control point, 9.4 ms for a
+width change), and while dragging, the oldest change not on screen yet is
+shown within 8.0 ms (control point) and 13.8 ms (Adjust Line Width) at p95.
+That wait was first measured on ed8c43a, before rendering an edited line's
+pieces in parallel: about 15 and 19 ms. Since the baseline, the
+dirty-region repaint p95 fell from 23.0 to 7.5 ms (control point) and from
+71.1 to 9.4 ms (adjust width). The
+whole-line eraser overlay fell from 14.3 to 6.7 ms at p95, the
 up-to-intersection release from 211 to 25 ms, and the cold layer repaint from
-1538 to 440 ms.
+1538 to 433 ms.
+
+The projection update interval while adjusting a width still has a long
+tail (max 86 ms): those are stretches where the brush passes between lines,
+changes nothing and no frame is due, which the wait measurement leaves out.
+A change that lands just after a repaint started waits for that repaint and
+its own, which is the wait's max (28 ms in this run). Painting the lines
+directly at 400% is limited by the render cache size; the canvas never
+takes that path, as it shows the layer's projection at any zoom.
 
 While a Correct Line drag is in progress the edited lines are rendered in
-pieces at the brush's pixel grid; the exact full render replaces them when the
-drag ends, so the finished result and the saved vector data are the same as
-before. Two figures stay above a frame: the projection update interval while
-adjusting a width can spike when one width step changes several long lines
-(max 92 ms, p95 25 ms), and painting the lines directly at 400% is limited by
-the render cache size. The canvas never takes that path; it shows the layer's
-projection at any zoom.
+pieces at the brush's pixel grid; the exact full render replaces them when
+the drag ends, so the finished result and the saved vector data are the same
+as before.
 
 Checked in the running app with the komapaint MCP server (1920x1080 window,
 mouse and pen strokes with pressure, all three eraser modes, control point
-drags and Adjust Line Width on 220 lines): the saved lines are the same set as
-before the optimizations, a fresh render of the saved file matches the one
-from before within one channel step on 39 pixels (the run-to-run variation of
-the old build), and the logs show no new warnings.
+drags and Adjust Line Width on 220 lines), against the same scenario run on
+the build before the optimizations:
+
+- The saved vector data is the same: every saved line is byte-identical,
+  and with the lines put in the reference file's order the whole SVG is
+  byte-identical. Only the order differs, which varies between runs of
+  the old build too (the layer saves its shapes in pointer order), with the
+  `shapeN` ids numbered in that order and the random layer uuids.
+- Opening the saved files and rendering them gives pixel-identical images
+  once the lines are in the same order; in save order, overlapping
+  anti-aliased lines round differently by one channel step on 39 pixels.
+- The live canvas matches within that rounding, except for 9 pixels near a
+  dragged control point where the old build left a faint grey remnant of the
+  line's previous position (a missed repaint); a fresh render of the old
+  build's own file has no remnant there, and the new build shows it the same
+  as the fresh render.
+- The logs are identical apart from the MCP bridge port.
