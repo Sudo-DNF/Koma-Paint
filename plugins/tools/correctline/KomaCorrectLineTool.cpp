@@ -18,7 +18,6 @@
 #include <KoIcon.h>
 #include <KoPointerEvent.h>
 #include <KoShapeController.h>
-#include <KoShapeManager.h>
 #include <KoViewConverter.h>
 #include <KisViewManager.h>
 #include <KomaPaintTokens.h>
@@ -29,7 +28,6 @@
 #include <kis_image.h>
 #include <kis_slider_spin_box.h>
 
-#include <algorithm>
 
 namespace
 {
@@ -74,36 +72,7 @@ KisShapeLayer *KomaCorrectLineTool::shapeLayer() const
 
 QList<KomaLineartShape*> KomaCorrectLineTool::lines() const
 {
-    QList<KomaLineartShape*> result;
-    if (KisShapeLayer *layer = shapeLayer()) {
-        const QList<KoShape*> shapes = layer->shapes();
-        for (KoShape *shape : shapes) {
-            KomaLineartShape *line = dynamic_cast<KomaLineartShape*>(shape);
-            if (line && line->isVisible() && line->isSelectable()) {
-                result.append(line);
-            }
-        }
-    }
-    return result;
-}
-
-QList<KomaLineartShape*> KomaCorrectLineTool::linesTouching(const QPointF &documentPoint, qreal radius) const
-{
-    QPainterPath brush;
-    brush.addEllipse(documentPoint, radius, radius);
-    QList<KomaLineartShape*> result;
-    KisShapeLayer *layer = shapeLayer();
-    if (!layer) {
-        return result;
-    }
-    for (KoShape *shape : layer->shapeManager()->shapesAt(brush.boundingRect())) {
-        KomaLineartShape *line = dynamic_cast<KomaLineartShape*>(shape);
-        if (line && line->parent() == layer && line->isVisible() && line->isSelectable()
-                && line->absoluteTransformation().map(line->outline()).intersects(brush)) {
-            result.append(line);
-        }
-    }
-    return result;
+    return KomaLineartEditor::lines(shapeLayer());
 }
 
 qreal KomaCorrectLineTool::pixelsToDocument(qreal pixels) const
@@ -123,24 +92,6 @@ void KomaCorrectLineTool::requestRepaint()
                                QRectF(canvas()->canvasWidget()->rect()))) : QRectF());
 }
 
-void KomaCorrectLineTool::touchLines(const QPointF &documentPoint)
-{
-    const qreal radius = radiusInDocument();
-    for (KomaLineartShape *line : linesTouching(documentPoint, radius)) {
-        if (m_edits.contains(line)) {
-            continue;
-        }
-        Edit edit;
-        edit.oldCenterline = line->centerline();
-        edit.oldTransformation = line->transformation();
-        // Width changes need samples along the line, not just its points.
-        edit.working = m_mode == Mode::AdjustWidth
-                ? KomaLineartShape::densify(line->centerlineInDocument(), radius / 4.0)
-                : line->centerlineInDocument();
-        m_edits.insert(line, edit);
-    }
-}
-
 void KomaCorrectLineTool::beginPrimaryAction(KoPointerEvent *event)
 {
     if (!shapeLayer() || !nodeEditable()) {
@@ -156,43 +107,20 @@ void KomaCorrectLineTool::beginPrimaryAction(KoPointerEvent *event)
     m_dragging = true;
     m_cursor = event->point;
     m_dragStart = event->point;
-    m_edits.clear();
-    m_pointShape = nullptr;
-    m_pointIndex = -1;
+    m_editor.clear();
 
     if (m_mode == Mode::ControlPoint) {
         // The nearest centerline point under the cursor.
         const qreal pickRadius = qMax(radiusInDocument(),
                                       canvas()->viewConverter()->viewToDocumentX(pointPickPixels));
-        qreal best = pickRadius;
-        for (KomaLineartShape *line : lines()) {
-            const QVector<KomaLineartPoint> points = line->centerlineInDocument();
-            for (int i = 0; i < points.size(); ++i) {
-                const qreal d = distance(points[i].position, event->point);
-                if (d <= best) {
-                    best = d;
-                    m_pointShape = line;
-                    m_pointIndex = i;
-                }
-            }
-        }
-        if (!m_pointShape) {
+        if (!m_editor.pickPoint(shapeLayer(), event->point, pickRadius)) {
             return;
         }
-        Edit edit;
-        edit.oldCenterline = m_pointShape->centerline();
-        edit.oldTransformation = m_pointShape->transformation();
-        edit.working = m_pointShape->centerlineInDocument();
-        m_edits.insert(m_pointShape, edit);
-
         if (event->modifiers() & Qt::ShiftModifier) {
-            Edit &e = m_edits[m_pointShape];
-            if (e.working.size() > 2) {
-                e.working.remove(m_pointIndex);
-                m_pointShape->setCenterlineFromDocument(e.working);
+            if (m_editor.deletePickedPoint()) {
                 commitEdits(kundo2_i18n("Delete Control Point"));
             }
-            m_pointShape = nullptr;
+            m_editor.clear();
             m_dragging = false;
             setMode(KisTool::HOVER_MODE);
         }
@@ -213,34 +141,16 @@ void KomaCorrectLineTool::continuePrimaryAction(KoPointerEvent *event)
 
     switch (m_mode) {
     case Mode::ControlPoint:
-        if (m_pointShape && m_edits.contains(m_pointShape)) {
-            Edit &edit = m_edits[m_pointShape];
-            edit.working[m_pointIndex].position = event->point;
-            m_pointShape->setCenterlineFromDocument(edit.working);
-        }
+        m_editor.movePickedPoint(event->point);
         break;
     case Mode::AdjustWidth: {
-        touchLines(event->point);
         const qreal step = widthStepAtFullStrength * m_amount / 100.0;
         const qreal factor = m_thicken ? 1.0 + step : 1.0 / (1.0 + step);
-        for (auto it = m_edits.begin(); it != m_edits.end(); ++it) {
-            const qreal radius = radiusInDocument();
-            const qreal radiusSquared = radius * radius;
-            const bool affectsLine = std::any_of(it->working.cbegin(), it->working.cend(),
-                                                  [&](const KomaLineartPoint &point) {
-                const QPointF delta = point.position - event->point;
-                return QPointF::dotProduct(delta, delta) < radiusSquared;
-            });
-            if (!affectsLine) {
-                continue;
-            }
-            it->working = KomaLineartShape::adjustWidth(it->working, event->point, radiusInDocument(), factor);
-            it.key()->setCenterlineFromDocument(it->working);
-        }
+        m_editor.adjustWidth(shapeLayer(), event->point, radiusInDocument(), factor);
         break;
     }
     case Mode::Simplify:
-        touchLines(event->point);
+        m_editor.touchLines(shapeLayer(), event->point, radiusInDocument(), 0);
         break;
     case Mode::Connect:
         break;
@@ -260,55 +170,29 @@ void KomaCorrectLineTool::endPrimaryAction(KoPointerEvent *event)
     case Mode::ControlPoint:
         commitEdits(kundo2_i18n("Move Control Point"));
         break;
-    case Mode::AdjustWidth: {
+    case Mode::AdjustWidth:
         // Drop the extra samples again once the width is set.
-        const qreal tolerance = pixelsToDocument(0.35);
-        for (auto it = m_edits.begin(); it != m_edits.end(); ++it) {
-            it->working = KomaLineartShape::simplify(it->working, tolerance);
-            it.key()->setCenterlineFromDocument(it->working);
-        }
+        m_editor.finishAdjustWidth(pixelsToDocument(0.35));
         commitEdits(m_thicken ? kundo2_i18n("Thicken Lines") : kundo2_i18n("Narrow Lines"));
         break;
-    }
-    case Mode::Simplify: {
+    case Mode::Simplify:
         // Higher strength smooths more and keeps fewer points.
-        const qreal tolerance = pixelsToDocument(0.25 + 4.0 * m_amount / 100.0);
-        const qreal spacing = pixelsToDocument(2.0);
-        for (auto it = m_edits.begin(); it != m_edits.end(); ++it) {
-            it->working = KomaLineartShape::processRawStroke(KomaLineartShape::densify(it->working, spacing), tolerance);
-            it.key()->setCenterlineFromDocument(it->working);
-        }
+        m_editor.simplifyLines(pixelsToDocument(2.0), pixelsToDocument(0.25 + 4.0 * m_amount / 100.0));
         commitEdits(kundo2_i18n("Simplify Lines"));
         break;
-    }
     case Mode::Connect:
         finishConnect(event->point);
         break;
     }
-    m_edits.clear();
-    m_pointShape = nullptr;
+    m_editor.clear();
     requestRepaint();
 }
 
 void KomaCorrectLineTool::commitEdits(const KUndo2MagicString &text)
 {
-    if (m_edits.isEmpty()) {
-        return;
+    if (KUndo2Command *command = m_editor.takeCommand(text)) {
+        canvas()->addCommand(command);
     }
-    KUndo2Command *command = new KUndo2Command(text);
-    for (auto it = m_edits.begin(); it != m_edits.end(); ++it) {
-        KomaLineartShape *line = it.key();
-        if (line->centerline() == it->oldCenterline && line->transformation() == it->oldTransformation) {
-            continue;
-        }
-        new KomaLineartEditCommand(line, it->oldCenterline, it->oldTransformation,
-                                   line->centerline(), line->transformation(), text, command);
-    }
-    if (command->childCount() == 0) {
-        delete command;
-        return;
-    }
-    canvas()->addCommand(command);
 }
 
 void KomaCorrectLineTool::finishConnect(const QPointF &documentPoint)
@@ -410,7 +294,7 @@ void KomaCorrectLineTool::paint(QPainter &gc, const KoViewConverter &converter)
                     continue;
                 }
                 const QPointF p = toView.map(points[i].position);
-                const bool active = line == m_pointShape && i == m_pointIndex;
+                const bool active = line == m_editor.pickedLine() && i == m_editor.pickedIndex();
                 gc.setBrush(active ? QBrush(t.pulse) : QBrush(t.surface));
                 gc.drawRect(QRectF(p.x() - handle, p.y() - handle, 2 * handle, 2 * handle));
             }

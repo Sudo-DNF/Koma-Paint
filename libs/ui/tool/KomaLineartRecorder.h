@@ -13,6 +13,8 @@
 #include <QSet>
 #include <QVector>
 
+#include <functional>
+
 #include <kis_types.h>
 #include <kis_distance_information.h>
 #include <brushengine/kis_paint_information.h>
@@ -50,6 +52,27 @@ public:
     static EraserMode eraserMode();
     static void setEraserMode(EraserMode mode);
 
+    /**
+     * Everything a stroke needs from the canvas. begin(KisCanvas2*, ...)
+     * fills it in from the canvas; tests and benchmarks fill it in
+     * themselves to record strokes without a view.
+     */
+    struct Target {
+        KisImageSP image;
+        KisShapeLayer *layer {nullptr};
+        KisPaintOpPresetSP preset;  ///< The current brush.
+        QColor color;               ///< The foreground colour.
+        EraserMode eraserMode {EraserMode::UpToIntersection};
+        /// Called with each document rect whose on-canvas look changed.
+        std::function<void(const QRectF &)> updateCanvas;
+    };
+
+    /// What erasing does to one line: the pieces that remain of it.
+    struct PartialErase {
+        KomaLineartShape *line {nullptr};
+        QVector<QVector<KomaLineartPoint>> pieces; ///< Simplified, document units.
+    };
+
     KomaLineartRecorder();
     ~KomaLineartRecorder();
 
@@ -61,12 +84,26 @@ public:
      * @return false if the layer cannot take lineart.
      */
     bool begin(KisCanvas2 *canvas, KisShapeLayer *layer, const QPointF &documentPoint, qreal pressure, bool erase);
+
+    /**
+     * Starts a stroke on @p target without a canvas. The stroke is recorded
+     * and previewed as with a canvas, but finish() only commits it when the
+     * stroke was begun on a canvas.
+     */
+    bool begin(const Target &target, const QPointF &documentPoint, qreal pressure, bool erase);
     void add(const QPointF &documentPoint, qreal pressure);
     void finish();
     void cancel();
 
     /// Draws the stroke in progress (or the lines about to be erased).
     void paint(QPainter &painter, const KoViewConverter &converter) const;
+
+    /**
+     * The lines a partial eraser stroke (touched area or up to
+     * intersection) changes, and what remains of each. Lines the eraser
+     * only grazed are left out.
+     */
+    QVector<PartialErase> partialErase() const;
 
 private:
     qreal widthForPressure(qreal pressure) const;
@@ -76,7 +113,7 @@ private:
     QRectF previewBounds() const;
 
     /// Starts painting the live preview with the stroke's brush.
-    bool beginBrushPreview(KisCanvas2 *canvas);
+    bool beginBrushPreview();
     /// Paints the newest segment of the live preview.
     void paintBrushPreview(const QPointF &documentPoint, qreal pressure);
     void endBrushPreview();
@@ -84,6 +121,8 @@ private:
     QRectF pixelToDocument(const QRectF &pixelRect) const;
 
     QPointer<KisCanvas2> m_canvas;
+    KisImageSP m_image;
+    std::function<void(const QRectF &)> m_updateCanvas;
     KisShapeLayer *m_layer {nullptr};
     bool m_active {false};
     bool m_erase {false};

@@ -98,7 +98,7 @@ QRectF KomaLineartRecorder::pixelToDocument(const QRectF &pixelRect) const
                   pixelRect.width() / m_xRes, pixelRect.height() / m_yRes);
 }
 
-bool KomaLineartRecorder::beginBrushPreview(KisCanvas2 *canvas)
+bool KomaLineartRecorder::beginBrushPreview()
 {
     endBrushPreview();
     if (!m_brush || !m_brush->settings()) {
@@ -107,7 +107,7 @@ bool KomaLineartRecorder::beginBrushPreview(KisCanvas2 *canvas)
 
     // A private image and layer give the brush engine what it expects;
     // only the tiles the stroke touches use memory.
-    const QRect bounds = canvas->image()->bounds();
+    const QRect bounds = m_image->bounds();
     const KoColorSpace *colorSpace = KoColorSpaceRegistry::instance()->rgb8();
     m_brushImage = new KisImage(nullptr, qMax(1, bounds.width()), qMax(1, bounds.height()),
                                 colorSpace, QStringLiteral("lineart preview"));
@@ -214,34 +214,62 @@ bool KomaLineartRecorder::begin(KisCanvas2 *canvas, KisShapeLayer *layer, const 
         return false;
     }
 
+    Target target;
+    target.image = canvas->image();
+    target.layer = layer;
+    target.preset = canvas->resourceManager()
+            ->resource(KoCanvasResource::CurrentPaintOpPreset).value<KisPaintOpPresetSP>();
+    target.color = canvas->resourceManager()->foregroundColor().toQColor();
+    target.eraserMode = eraserMode();
+    const QPointer<KisCanvas2> guardedCanvas(canvas);
+    target.updateCanvas = [guardedCanvas](const QRectF &documentRect) {
+        if (guardedCanvas) {
+            guardedCanvas->updateCanvas(documentRect);
+        }
+    };
+
+    if (!begin(target, documentPoint, pressure, erase)) {
+        return false;
+    }
     m_canvas = canvas;
-    m_layer = layer;
+    return true;
+}
+
+bool KomaLineartRecorder::begin(const Target &target, const QPointF &documentPoint, qreal pressure, bool erase)
+{
+    if (!target.image || !target.layer) {
+        return false;
+    }
+
+    m_canvas = nullptr;
+    m_image = target.image;
+    m_updateCanvas = target.updateCanvas;
+    m_layer = target.layer;
     m_erase = erase;
     m_raw.clear();
     m_preview = QPainterPath();
     m_erased.clear();
     m_eraserTrail.clear();
-    m_eraserMode = eraserMode();
+    m_eraserMode = target.eraserMode;
 
     // Brush size is in image pixels; shapes live in document units.
-    const qreal pixelsPerUnit = qMax(canvas->image()->xRes(), 1e-6);
+    const qreal pixelsPerUnit = qMax(m_image->xRes(), 1e-6);
     qreal sizeInPixels = 4.0;
-    const KisPaintOpPresetSP preset = canvas->resourceManager()
-            ->resource(KoCanvasResource::CurrentPaintOpPreset).value<KisPaintOpPresetSP>();
+    const KisPaintOpPresetSP &preset = target.preset;
     if (preset && preset->settings()) {
         sizeInPixels = qMax<qreal>(0.5, preset->settings()->paintOpSize());
     }
     m_baseWidth = sizeInPixels / pixelsPerUnit;
     m_eraserRadius = m_baseWidth / 2.0;
-    m_color = canvas->resourceManager()->foregroundColor().toQColor();
+    m_color = target.color;
     m_color.setAlpha(255);
     // New lines are rendered with the brush they are drawn with, and the
     // stroke previews with it while it is drawn.
     m_brush = erase ? KisPaintOpPresetSP() : KomaLineartShape::brushSnapshot(preset, m_color);
-    m_xRes = qMax(canvas->image()->xRes(), 1e-6);
-    m_yRes = qMax(canvas->image()->yRes(), 1e-6);
+    m_xRes = qMax(m_image->xRes(), 1e-6);
+    m_yRes = qMax(m_image->yRes(), 1e-6);
     if (!erase) {
-        beginBrushPreview(canvas);
+        beginBrushPreview();
     }
 
     m_active = true;
@@ -323,7 +351,7 @@ void KomaLineartRecorder::finish()
                 m_canvas->addCommand(command);
             }
         } else if (!m_raw.isEmpty()) {
-            const qreal pixelsPerUnit = qMax(m_canvas->image()->xRes(), 1e-6);
+            const qreal pixelsPerUnit = qMax(m_image->xRes(), 1e-6);
             const QVector<KomaLineartPoint> centerline =
                     KomaLineartShape::processRawStroke(m_raw, simplifyTolerancePixels / pixelsPerUnit);
 
@@ -346,11 +374,16 @@ void KomaLineartRecorder::finish()
     m_eraserTrail.clear();
     endBrushPreview();
     requestUpdate(dirty);
+    m_image = nullptr;
 }
 
-void KomaLineartRecorder::applyPartialErase(KUndo2Command *parent)
+QVector<KomaLineartRecorder::PartialErase> KomaLineartRecorder::partialErase() const
 {
-    const qreal pixelsPerUnit = qMax(m_canvas->image()->xRes(), 1e-6);
+    QVector<PartialErase> result;
+    if (!m_layer || !m_image || m_eraserMode == EraserMode::WholeLine) {
+        return result;
+    }
+    const qreal pixelsPerUnit = qMax(m_image->xRes(), 1e-6);
     const qreal spacing = qMax(m_eraserRadius / 3.0, 0.5 / pixelsPerUnit);
     const qreal tolerance = simplifyTolerancePixels / pixelsPerUnit;
 
@@ -401,12 +434,28 @@ void KomaLineartRecorder::applyPartialErase(KUndo2Command *parent)
             continue; // the eraser only grazed the outline
         }
 
-        m_canvas->shapeController()->removeShape(line, parent);
+        PartialErase erase;
+        erase.line = line;
+        erase.pieces.reserve(pieces.size());
         for (const QVector<KomaLineartPoint> &piece : pieces) {
+            erase.pieces.append(KomaLineartShape::simplify(piece, tolerance));
+        }
+        result.append(erase);
+    }
+    return result;
+}
+
+void KomaLineartRecorder::applyPartialErase(KUndo2Command *parent)
+{
+    const QVector<PartialErase> erases = partialErase();
+    for (const PartialErase &erase : erases) {
+        KomaLineartShape *line = erase.line;
+        m_canvas->shapeController()->removeShape(line, parent);
+        for (const QVector<KomaLineartPoint> &piece : erase.pieces) {
             KomaLineartShape *remaining = new KomaLineartShape();
             remaining->setLineColor(line->lineColor());
             remaining->setZIndex(line->zIndex());
-            remaining->setCenterlineInDocument(KomaLineartShape::simplify(piece, tolerance));
+            remaining->setCenterlineInDocument(piece);
             remaining->setBrush(line->brush(), line->fullPressureWidth() * qSqrt(qAbs(line->absoluteTransformation().determinant())));
             m_canvas->shapeController()->addShape(remaining, m_layer, parent);
         }
@@ -425,6 +474,7 @@ void KomaLineartRecorder::cancel()
     m_erased.clear();
     endBrushPreview();
     requestUpdate(dirty);
+    m_image = nullptr;
 }
 
 QRectF KomaLineartRecorder::previewBounds() const
@@ -441,9 +491,9 @@ QRectF KomaLineartRecorder::previewBounds() const
 
 void KomaLineartRecorder::requestUpdate(const QRectF &documentRect)
 {
-    if (m_canvas && documentRect.isValid()) {
+    if (m_updateCanvas && documentRect.isValid()) {
         const qreal margin = m_baseWidth;
-        m_canvas->updateCanvas(documentRect.adjusted(-margin, -margin, margin, margin));
+        m_updateCanvas(documentRect.adjusted(-margin, -margin, margin, margin));
     }
 }
 

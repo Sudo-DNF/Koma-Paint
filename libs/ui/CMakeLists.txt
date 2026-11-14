@@ -173,6 +173,7 @@ set(kritaui_LIB_SRCS
     KomaPaintStyle.cpp
     KomaPaintToolGroups.cpp
     flake/KomaLineartShape.cpp
+    tool/KomaLineartEditor.cpp
     tool/KomaLineartPreview.cpp
     tool/KomaLineartRecorder.cpp
     KisIdleTasksManager.cpp

@@ -15,6 +15,7 @@
 #include <kis_tool.h>
 
 #include <flake/KomaLineartShape.h>
+#include <tool/KomaLineartEditor.h>
 
 class KisShapeLayer;
 class QComboBox;
@@ -55,18 +56,10 @@ public:
     QWidget *createOptionWidget() override;
 
 private:
-    struct Edit {
-        QVector<KomaLineartPoint> oldCenterline;
-        QTransform oldTransformation;
-        QVector<KomaLineartPoint> working; ///< Document coordinates.
-    };
-
     KisShapeLayer *shapeLayer() const;
     QList<KomaLineartShape*> lines() const;
-    QList<KomaLineartShape*> linesTouching(const QPointF &documentPoint, qreal radius) const;
     qreal radiusInDocument() const;
     qreal pixelsToDocument(qreal pixels) const;
-    void touchLines(const QPointF &documentPoint);
     void commitEdits(const KUndo2MagicString &text);
     void finishConnect(const QPointF &documentPoint);
     void requestRepaint();
@@ -81,11 +74,7 @@ private:
     QPointF m_cursor;      ///< Document coordinates.
     QPointF m_dragStart;
 
-    QHash<KomaLineartShape*, Edit> m_edits;
-
-    // Control point dragging.
-    KomaLineartShape *m_pointShape {nullptr};
-    int m_pointIndex {-1};
+    KomaLineartEditor m_editor;
 };
 
 class KomaCorrectLineToolFactory : public KoToolFactoryBase
