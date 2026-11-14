@@ -482,8 +482,14 @@ void KomaLineartRecorder::paint(QPainter &painter, const KoViewConverter &conver
         painter.setPen(Qt::NoPen);
         painter.setBrush(QColor(128, 128, 128, 160));
         if (m_eraserMode == EraserMode::WholeLine) {
-            // Lines that will be erased are drawn in a muted grey.
+            // Lines that will be erased are drawn in a muted grey. Only those
+            // reaching into the area being repainted are drawn: a stroke can
+            // mark dozens of lines, and each frame repaints a small part.
+            const QRectF clip = painter.hasClipping() ? painter.clipBoundingRect() : QRectF();
             for (KomaLineartShape *line : m_erased) {
+                if (!clip.isNull() && !toView.mapRect(line->boundingRect()).intersects(clip)) {
+                    continue;
+                }
                 painter.drawPath(toView.map(line->absoluteTransformation().map(line->outline())));
             }
         } else {
