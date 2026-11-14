@@ -2,7 +2,7 @@
 
 Koma Paint is a free digital painting and comic studio. Its workspace is built around how illustrators work: tools and their variants on the left, layers and navigation on the right, and the canvas in the middle with nothing in the way.
 
-![The Koma Paint workspace with an illustration open: tool strip and Sub Tool panel on the left, layers and colour mixing on the right](screenshots/workspace.png)
+![The demo illustration open in the Koma Paint workspace, with the Sub Tool panel on the left and the Overview, Layers and Color Mixing panels on the right](screenshots/demo-workspace.png)
 
 Koma Paint is based on [Krita](https://krita.org) and keeps its painting engine, brushes, filters and file format. What changes is the workspace, the controls and a set of tools for illustration and comics. Koma Paint is not affiliated with or endorsed by the Krita Foundation.
 
@@ -21,10 +21,6 @@ Clip Studio Paint is a trademark Celsys, I am not associated with the company in
 A demo illustration drawn in Koma Paint, with its lineart on a vector layer:
 
 ![A bearded man in grey body armour and a brown backpack, drawn with clean black lineart against a dark sky with falling snow](screenshots/demo-artwork.png)
-
-The same document open in the Koma Paint workspace:
-
-![The demo illustration open in the Koma Paint workspace, with the Sub Tool panel on the left and the Overview, Layers and Color Mixing panels on the right](screenshots/demo-workspace.png)
 
 ## The workspace
 
