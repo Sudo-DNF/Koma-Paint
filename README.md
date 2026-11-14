@@ -185,3 +185,5 @@ Koma Paint is free software, released under the GNU General Public License, vers
 ## Credits
 
 Koma Paint stands on the work of the Krita developers and the KDE community. The full list of Krita contributors is in Help > About Koma Paint. Krita lives at [krita.org](https://krita.org) and [invent.kde.org/graphics/krita](https://invent.kde.org/graphics/krita).
+
+If you are a Krita developer and you are seeing this message, I want to give a huge applause to you guys for doing the amazing work you are doing on Krita, ive been using it since I started making digital art in 2016 and its been a great software.
