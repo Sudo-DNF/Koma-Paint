@@ -198,8 +198,25 @@ void KisShapeLayerCanvas::setImage(KisImageWSP image)
     m_projection->setDefaultBounds(new KisDefaultBounds(image));
     if (image && m_hasUpdateOnSetImage) {
         m_hasUpdateOnSetImage = false;
-        const QRectF documentRect = viewConverter()->viewToDocument(m_cachedImageRect);
-        updateCanvas(documentRect);
+        /**
+         * KisImage::clone() sets the image of every node from inside the new
+         * image's constructor. Starting the update compressor here would run
+         * slotStartAsyncRepaint() synchronously (the compressor emits on its
+         * first start), and the strong reference that slot takes to the
+         * half-built image would destroy it. So only record the update as
+         * pending, which keeps forceUpdateTimedNode() working on the clone,
+         * and start the compressor once control is back in the event loop.
+         */
+        {
+            QMutexLocker locker(&m_dirtyRegionMutex);
+            m_dirtyRegion += kisGrowRect(m_cachedImageRect, 2);
+        }
+        m_hasUpdateInCompressor = true;
+        QMetaObject::invokeMethod(this, [this]() {
+            if (m_hasUpdateInCompressor && !m_isDestroying) {
+                m_asyncUpdateSignalCompressor.start();
+            }
+        }, Qt::QueuedConnection);
     }
 }
 
