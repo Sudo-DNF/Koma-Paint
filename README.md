@@ -101,10 +101,12 @@ On a vector layer, a brush tool draws editable ink lines instead of pixels. Each
 
 ![Lineart on a vector layer with the Correct Line Control Point tool showing a line's points](screenshots/lineart.png)
 
+- Brush previews update only the affected image tiles while drawing. Vector-layer repaints reuse a bounded cache of brush renders, storing sparse long strokes in tiles to reduce eviction; completed strokes request a prompt layer update. These optimizations do not change the saved vector line.
 - **Vector eraser.** Eraser mode has three settings, chosen in the brush tool options:
   - erase the touched area;
   - erase up to intersection: clean up overshoots where lines cross;
   - erase whole line.
+- Eraser intersections are spatially indexed and the live trail avoids expensive path simplification. Its antialiased edges may differ slightly from the previous preview; erased geometry is unchanged.
 - **Correct Line.** A toolbox group whose sub tools edit lines after drawing:
   - **Control Point:** drag a point to reshape a line; Shift+click a point to delete it.
   - **Adjust Line Width:** brush over lines to thicken or narrow them.

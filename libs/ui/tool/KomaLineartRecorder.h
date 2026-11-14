@@ -7,7 +7,6 @@
 #define KOMALINEARTRECORDER_H
 
 #include <QColor>
-#include <QImage>
 #include <QPainterPath>
 #include <QScopedPointer>
 #include <QPointer>
@@ -19,6 +18,7 @@
 #include <brushengine/kis_paint_information.h>
 
 #include "flake/KomaLineartShape.h"
+#include "KomaLineartPreview.h"
 #include "kritaui_export.h"
 
 class QPainter;
@@ -103,8 +103,7 @@ private:
     KisDistanceInformation m_brushDistance;
     KisPaintInformation m_lastBrushInfo;
     bool m_brushStarted {false};
-    QImage m_brushPreview;      ///< The painted stroke so far.
-    QRect m_brushPreviewRect;   ///< Image pixels covered by m_brushPreview.
+    KomaLineartPreview m_brushPreview;
 
     qreal m_eraserRadius {1.0};
     EraserMode m_eraserMode {EraserMode::UpToIntersection};

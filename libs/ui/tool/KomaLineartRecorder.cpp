@@ -25,6 +25,7 @@
 #include <KoCanvasResourceProvider.h>
 #include <KoColor.h>
 #include <KoShapeController.h>
+#include <KoShapeManager.h>
 #include <KoViewConverter.h>
 #include <brushengine/kis_paintop_preset.h>
 #include <brushengine/kis_paintop_settings.h>
@@ -40,6 +41,30 @@ namespace
 constexpr qreal simplifyTolerancePixels = 0.35;
 
 const QString eraserModeKey = QStringLiteral("KomaPaint/VectorEraserMode");
+
+QRectF polylineBounds(const QVector<QPointF> &points)
+{
+    if (points.isEmpty()) {
+        return QRectF();
+    }
+    qreal left = points.first().x();
+    qreal right = left;
+    qreal top = points.first().y();
+    qreal bottom = top;
+    for (const QPointF &point : points) {
+        left = qMin(left, point.x());
+        right = qMax(right, point.x());
+        top = qMin(top, point.y());
+        bottom = qMax(bottom, point.y());
+    }
+    return QRectF(QPointF(left, top), QPointF(right, bottom));
+}
+
+bool boundsOverlap(const QRectF &a, const QRectF &b)
+{
+    return a.left() <= b.right() && a.right() >= b.left()
+            && a.top() <= b.bottom() && a.bottom() >= b.top();
+}
 }
 
 KomaLineartRecorder::EraserMode KomaLineartRecorder::eraserMode()
@@ -108,8 +133,7 @@ bool KomaLineartRecorder::beginBrushPreview(KisCanvas2 *canvas)
 
     m_brushDistance = KisDistanceInformation();
     m_brushStarted = false;
-    m_brushPreview = QImage();
-    m_brushPreviewRect = QRect();
+    m_brushPreview.clear();
     return true;
 }
 
@@ -153,27 +177,11 @@ void KomaLineartRecorder::paintBrushPreview(const QPointF &documentPoint, qreal 
         changed |= rect;
     }
 
-    const QRect grown = m_brushPreviewRect | changed;
-    if (grown != m_brushPreviewRect) {
-        QImage resized(grown.size(), QImage::Format_ARGB32_Premultiplied);
-        resized.fill(Qt::transparent);
-        if (!m_brushPreview.isNull()) {
-            QPainter copier(&resized);
-            copier.setCompositionMode(QPainter::CompositionMode_Source);
-            copier.drawImage(m_brushPreviewRect.topLeft() - grown.topLeft(), m_brushPreview);
-        }
-        m_brushPreview = resized;
-        m_brushPreviewRect = grown;
-    }
-
-    QPainter writer(&m_brushPreview);
-    writer.setCompositionMode(QPainter::CompositionMode_Source);
     for (const QRect &rect : dirty) {
         const QImage part = m_brushLayer->paintDevice()->convertToQImage(nullptr, rect.x(), rect.y(),
                                                                          rect.width(), rect.height());
-        writer.drawImage(rect.topLeft() - m_brushPreviewRect.topLeft(), part);
+        m_brushPreview.update(rect, part);
     }
-    writer.end();
 
     requestUpdate(pixelToDocument(changed));
 }
@@ -184,8 +192,7 @@ void KomaLineartRecorder::endBrushPreview()
     m_brushLayer = nullptr;
     m_brushImage = nullptr;
     m_brushStarted = false;
-    m_brushPreview = QImage();
-    m_brushPreviewRect = QRect();
+    m_brushPreview.clear();
 }
 
 bool KomaLineartRecorder::isActive() const
@@ -256,12 +263,12 @@ void KomaLineartRecorder::add(const QPointF &documentPoint, qreal pressure)
     if (!m_raw.isEmpty() && m_raw.last().position == documentPoint) {
         return;
     }
-    const QRectF before = m_preview.boundingRect();
     m_raw.append({documentPoint, widthForPressure(pressure)});
-    m_preview = KomaLineartShape::outlineForCenterline(m_raw);
     if (m_brushPainter) {
         paintBrushPreview(documentPoint, pressure);
     } else {
+        const QRectF before = m_preview.boundingRect();
+        m_preview = KomaLineartShape::outlineForCenterline(m_raw);
         requestUpdate(before | m_preview.boundingRect());
     }
 }
@@ -278,10 +285,10 @@ void KomaLineartRecorder::collectErasedLines(const QPointF &documentPoint)
     eraser.addEllipse(documentPoint, m_eraserRadius, m_eraserRadius);
     requestUpdate(eraser.boundingRect());
 
-    const QList<KoShape*> shapes = m_layer->shapes();
+    const QList<KoShape*> shapes = m_layer->shapeManager()->shapesAt(eraser.boundingRect());
     for (KoShape *shape : shapes) {
         KomaLineartShape *line = dynamic_cast<KomaLineartShape*>(shape);
-        if (!line || m_erased.contains(line) || !line->isVisible() || !line->isSelectable()) {
+        if (!line || line->parent() != m_layer || m_erased.contains(line) || !line->isVisible() || !line->isSelectable()) {
             continue;
         }
         const QPainterPath outline = line->absoluteTransformation().map(line->outline());
@@ -328,6 +335,8 @@ void KomaLineartRecorder::finish()
             KUndo2Command *command = m_canvas->shapeController()->addShape(line, m_layer);
             command->setText(kundo2_i18n("Draw Line"));
             m_canvas->addCommand(command);
+            // Do not wait for the vector layer's update-compression timer.
+            m_layer->forceUpdateTimedNode();
         }
     }
 
@@ -347,6 +356,7 @@ void KomaLineartRecorder::applyPartialErase(KUndo2Command *parent)
 
     // Lines crossing the erased ones bound "erase up to intersection".
     QVector<QVector<QPointF>> allLines;
+    QVector<QRectF> allBounds;
     QHash<KomaLineartShape*, int> lineIndex;
     QVector<QVector<KomaLineartPoint>> denseLines;
     if (m_eraserMode == EraserMode::UpToIntersection) {
@@ -363,6 +373,7 @@ void KomaLineartRecorder::applyPartialErase(KUndo2Command *parent)
                 polyline.append(point.position);
             }
             lineIndex.insert(line, allLines.size());
+            allBounds.append(polylineBounds(polyline));
             allLines.append(polyline);
             denseLines.append(dense);
         }
@@ -376,7 +387,7 @@ void KomaLineartRecorder::applyPartialErase(KUndo2Command *parent)
             dense = own >= 0 ? denseLines[own] : KomaLineartShape::densify(line->centerlineInDocument(), spacing);
             QVector<QVector<QPointF>> others;
             for (int i = 0; i < allLines.size(); ++i) {
-                if (i != own) {
+                if (i != own && (own < 0 || boundsOverlap(allBounds[own], allBounds[i]))) {
                     others.append(allLines[i]);
                 }
             }
@@ -419,8 +430,8 @@ void KomaLineartRecorder::cancel()
 QRectF KomaLineartRecorder::previewBounds() const
 {
     QRectF bounds = m_preview.boundingRect();
-    if (!m_brushPreviewRect.isEmpty()) {
-        bounds |= pixelToDocument(m_brushPreviewRect);
+    if (!m_brushPreview.bounds().isEmpty()) {
+        bounds |= pixelToDocument(m_brushPreview.bounds());
     }
     for (KomaLineartShape *line : m_erased) {
         bounds |= line->absoluteTransformation().map(line->outline()).boundingRect();
@@ -468,16 +479,15 @@ void KomaLineartRecorder::paint(QPainter &painter, const KoViewConverter &conver
                 }
                 QPainterPath area = stroker.createStroke(trail);
                 area.addEllipse(m_eraserTrail.first(), m_eraserRadius, m_eraserRadius);
-                painter.drawPath(toView.map(area.simplified()));
+                area.setFillRule(Qt::WindingFill);
+                painter.drawPath(toView.map(area));
             }
         }
     } else if (m_brushPainter) {
         // The stroke as the brush paints it.
-        if (!m_brushPreview.isNull()) {
-            painter.setRenderHint(QPainter::SmoothPixmapTransform);
-            painter.setTransform(toView, true);
-            painter.drawImage(pixelToDocument(m_brushPreviewRect), m_brushPreview);
-        }
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+        painter.setTransform(toView, true);
+        m_brushPreview.paint(painter, m_xRes, m_yRes);
     } else {
         painter.setPen(Qt::NoPen);
         painter.setBrush(m_color);

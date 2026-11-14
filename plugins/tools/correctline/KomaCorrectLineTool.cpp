@@ -18,6 +18,7 @@
 #include <KoIcon.h>
 #include <KoPointerEvent.h>
 #include <KoShapeController.h>
+#include <KoShapeManager.h>
 #include <KoViewConverter.h>
 #include <KisViewManager.h>
 #include <KomaPaintTokens.h>
@@ -27,6 +28,8 @@
 #include <kis_cursor.h>
 #include <kis_image.h>
 #include <kis_slider_spin_box.h>
+
+#include <algorithm>
 
 namespace
 {
@@ -89,8 +92,14 @@ QList<KomaLineartShape*> KomaCorrectLineTool::linesTouching(const QPointF &docum
     QPainterPath brush;
     brush.addEllipse(documentPoint, radius, radius);
     QList<KomaLineartShape*> result;
-    for (KomaLineartShape *line : lines()) {
-        if (line->absoluteTransformation().map(line->outline()).intersects(brush)) {
+    KisShapeLayer *layer = shapeLayer();
+    if (!layer) {
+        return result;
+    }
+    for (KoShape *shape : layer->shapeManager()->shapesAt(brush.boundingRect())) {
+        KomaLineartShape *line = dynamic_cast<KomaLineartShape*>(shape);
+        if (line && line->parent() == layer && line->isVisible() && line->isSelectable()
+                && line->absoluteTransformation().map(line->outline()).intersects(brush)) {
             result.append(line);
         }
     }
@@ -215,6 +224,16 @@ void KomaCorrectLineTool::continuePrimaryAction(KoPointerEvent *event)
         const qreal step = widthStepAtFullStrength * m_amount / 100.0;
         const qreal factor = m_thicken ? 1.0 + step : 1.0 / (1.0 + step);
         for (auto it = m_edits.begin(); it != m_edits.end(); ++it) {
+            const qreal radius = radiusInDocument();
+            const qreal radiusSquared = radius * radius;
+            const bool affectsLine = std::any_of(it->working.cbegin(), it->working.cend(),
+                                                  [&](const KomaLineartPoint &point) {
+                const QPointF delta = point.position - event->point;
+                return QPointF::dotProduct(delta, delta) < radiusSquared;
+            });
+            if (!affectsLine) {
+                continue;
+            }
             it->working = KomaLineartShape::adjustWidth(it->working, event->point, radiusInDocument(), factor);
             it.key()->setCenterlineFromDocument(it->working);
         }

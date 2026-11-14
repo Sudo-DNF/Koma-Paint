@@ -21,6 +21,15 @@ private Q_SLOTS:
     void testConnect();
     void testEditTransformedLine();
     void testNewLineStaysWhereDrawn();
+    void testBrushPreviewTiles();
+    void testSparseImageRendering();
+    void testSparseRenderCloneInvalidation();
+    void testBrushRenderCloneInvalidation();
+    void testImmediateProjectionUndoRedo();
+    void testEraserSpatialCandidates();
+    void testIndexedEraserMatchesBruteForce();
+    void testIndexedIntersectionBoundaries();
+    void testEraserOverlayFill();
 };
 
 #endif // KOMALINEARTSHAPETEST_H

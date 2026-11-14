@@ -4,12 +4,15 @@
  *  SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "KomaLineartShape.h"
+#include "tool/KomaLineartPreview.h"
 
 #include <QDomElement>
+#include <QCache>
 #include <QStringList>
 #include <QtMath>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
 
@@ -54,6 +57,76 @@ constexpr qreal kappa = 0.5522847498;
 
 const QString lineartType = QStringLiteral("komapaint-lineart");
 const QString lineartAttribute = QStringLiteral("krita:lineart");
+
+struct CachedLineartRender {
+    QImage image;
+    KomaLineartPreview tiles;
+    QSize imageSize;
+    QRectF rect;
+    qreal scale;
+    bool tiled {false};
+
+    qint64 sizeInBytes() const
+    {
+        return tiled ? tiles.sizeInBytes() : image.sizeInBytes();
+    }
+
+    void paint(QPainter &painter) const
+    {
+        if (!tiled) {
+            painter.drawImage(rect, image);
+            return;
+        }
+        const QTransform transform = painter.transform();
+        // Rotated tile clips can leave seams; non-SourceOver modes need transparent pixels too.
+        if (transform.type() >= QTransform::TxRotate ||
+            transform.m11() <= 0 || transform.m22() <= 0 ||
+            painter.compositionMode() != QPainter::CompositionMode_SourceOver) {
+            painter.drawImage(rect, tiles.toImage(imageSize));
+            return;
+        }
+        painter.save();
+        painter.translate(rect.topLeft());
+        painter.scale(rect.width() / imageSize.width(), rect.height() / imageSize.height());
+        painter.setClipRect(QRectF(QPointF(0, 0), imageSize), Qt::IntersectClip);
+        tiles.paint(painter, 1, 1);
+        painter.restore();
+    }
+};
+
+CachedLineartRender makeCachedLineartRender(const QImage &image, const QRectF &rect, qreal scale)
+{
+    CachedLineartRender result;
+    result.image = image;
+    result.imageSize = image.size();
+    result.rect = rect;
+    result.scale = scale;
+
+    if (image.format() != QImage::Format_ARGB32 || image.sizeInBytes() < 1024 * 1024) {
+        return result;
+    }
+
+    result.tiles.setSparseImage(image);
+    if (result.tiles.sizeInBytes() < image.sizeInBytes()) {
+        result.tiled = true;
+        result.image = QImage();
+    } else {
+        result.tiles.clear();
+    }
+    return result;
+}
+
+struct LineartRenderStore {
+    QMutex mutex;
+    // Costs are in KiB; old renders are evicted across all lineart shapes.
+    QCache<quint64, CachedLineartRender> renders {128 * 1024};
+};
+
+LineartRenderStore &renderStore()
+{
+    static LineartRenderStore store;
+    return store;
+}
 
 QPointF normalized(const QPointF &v)
 {
@@ -147,6 +220,12 @@ void appendPainterPath(KoPathShape *shape, const QPainterPath &path)
 }
 }
 
+KomaLineartShape::RenderCache::RenderCache()
+{
+    static std::atomic<quint64> nextId {0};
+    id = ++nextId;
+}
+
 KomaLineartShape::KomaLineartShape()
 {
     setShapeId(KomaLineartShapeId);
@@ -162,6 +241,8 @@ KomaLineartShape::KomaLineartShape(const KomaLineartShape &rhs)
     , m_brushMd5(rhs.m_brushMd5)
     , m_fullPressureWidth(rhs.m_fullPressureWidth)
 {
+    QMutexLocker locker(&rhs.m_cacheMutex);
+    m_renderCache = rhs.m_renderCache;
 }
 
 KomaLineartShape::~KomaLineartShape()
@@ -230,9 +311,8 @@ KisPaintOpPresetSP KomaLineartShape::brushSnapshot(KisPaintOpPresetSP preset, co
 
 void KomaLineartShape::invalidateRender()
 {
-    QMutexLocker locker(&m_renderMutex);
-    m_render = QImage();
-    m_renderScale = 0.0;
+    QMutexLocker locker(&m_cacheMutex);
+    m_renderCache.reset(new RenderCache);
 }
 
 QRectF KomaLineartShape::boundingRect() const
@@ -259,25 +339,44 @@ void KomaLineartShape::paint(QPainter &painter) const
         return;
     }
 
-    QImage image;
-    QRectF rect;
+    CachedLineartRender render;
+    bool haveRender = false;
+    QSharedPointer<RenderCache> cache;
     {
-        QMutexLocker locker(&m_renderMutex);
-        if (m_render.isNull() || !qFuzzyCompare(m_renderScale, scale)) {
-            m_render = renderWithBrush(scale, &m_renderRect);
-            m_renderScale = scale;
+        QMutexLocker locker(&m_cacheMutex);
+        cache = m_renderCache;
+    }
+    {
+        QMutexLocker locker(&cache->mutex);
+        LineartRenderStore &store = renderStore();
+        {
+            QMutexLocker storeLocker(&store.mutex);
+            const CachedLineartRender *cached = store.renders.object(cache->id);
+            if (cached && qFuzzyCompare(cached->scale, scale)) {
+                render = *cached;
+                haveRender = true;
+            }
         }
-        image = m_render;
-        rect = m_renderRect;
+        if (!haveRender) {
+            QRectF rect;
+            const QImage image = renderWithBrush(scale, &rect);
+            if (!image.isNull()) {
+                render = makeCachedLineartRender(image, rect, scale);
+                haveRender = true;
+                const int cost = int(qMax<qint64>(1, (render.sizeInBytes() + 1023) / 1024));
+                QMutexLocker storeLocker(&store.mutex);
+                store.renders.insert(cache->id, new CachedLineartRender(render), cost);
+            }
+        }
     }
 
-    if (image.isNull()) {
+    if (!haveRender) {
         KoPathShape::paint(painter);
         return;
     }
     painter.save();
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
-    painter.drawImage(rect, image);
+    render.paint(painter);
     painter.restore();
 }
 
@@ -470,30 +569,136 @@ QVector<KomaLineartPoint> KomaLineartShape::densify(const QVector<KomaLineartPoi
 
 namespace
 {
-/// Distance from @p p to the polyline @p path.
-qreal distanceToPolyline(const QPointF &p, const QVector<QPointF> &path)
+struct LineSegment {
+    QPointF a;
+    QPointF b;
+
+    QRectF bounds() const
+    {
+        return QRectF(a, b).normalized();
+    }
+};
+
+bool overlapsInclusive(const QRectF &a, const QRectF &b)
 {
-    if (path.isEmpty()) {
-        return std::numeric_limits<qreal>::max();
+    return a.left() <= b.right() && a.right() >= b.left()
+            && a.top() <= b.bottom() && a.bottom() >= b.top();
+}
+
+class SegmentIndex
+{
+public:
+    explicit SegmentIndex(QVector<LineSegment> segments)
+        : m_segments(std::move(segments))
+    {
+        if (!m_segments.isEmpty()) {
+            m_nodes.reserve(2 * m_segments.size());
+            build(0, m_segments.size());
+        }
     }
-    if (path.size() == 1) {
-        const QPointF d = p - path.first();
-        return qSqrt(d.x() * d.x() + d.y() * d.y());
+
+    template<typename Visitor>
+    bool visit(const QRectF &bounds, const Visitor &visitor) const
+    {
+        return !m_nodes.isEmpty() && visitNode(0, bounds, visitor);
     }
-    qreal best = std::numeric_limits<qreal>::max();
-    for (int i = 0; i + 1 < path.size(); ++i) {
-        qreal t = 0;
-        best = qMin(best, segmentDistance(p, path[i], path[i + 1], &t));
+
+private:
+    struct Node {
+        QRectF bounds;
+        int first;
+        int last;
+        int left {-1};
+        int right {-1};
+    };
+
+    int build(int first, int last)
+    {
+        qreal left = std::numeric_limits<qreal>::max();
+        qreal top = left;
+        qreal right = std::numeric_limits<qreal>::lowest();
+        qreal bottom = right;
+        for (int i = first; i < last; ++i) {
+            const QRectF rect = m_segments[i].bounds();
+            left = qMin(left, rect.left());
+            right = qMax(right, rect.right());
+            top = qMin(top, rect.top());
+            bottom = qMax(bottom, rect.bottom());
+        }
+        const int node = m_nodes.size();
+        m_nodes.append({QRectF(QPointF(left, top), QPointF(right, bottom)), first, last});
+        if (last - first > 8) {
+            const bool xAxis = right - left >= bottom - top;
+            const int middle = first + (last - first) / 2;
+            std::nth_element(m_segments.begin() + first, m_segments.begin() + middle, m_segments.begin() + last,
+                             [xAxis](const LineSegment &a, const LineSegment &b) {
+                return xAxis ? a.a.x() + a.b.x() < b.a.x() + b.b.x()
+                             : a.a.y() + a.b.y() < b.a.y() + b.b.y();
+            });
+            const int leftChild = build(first, middle);
+            const int rightChild = build(middle, last);
+            m_nodes[node].left = leftChild;
+            m_nodes[node].right = rightChild;
+        }
+        return node;
     }
-    return best;
+
+    template<typename Visitor>
+    bool visitNode(int index, const QRectF &bounds, const Visitor &visitor) const
+    {
+        const Node &node = m_nodes[index];
+        if (!overlapsInclusive(node.bounds, bounds)) {
+            return false;
+        }
+        if (node.left >= 0) {
+            return visitNode(node.left, bounds, visitor) || visitNode(node.right, bounds, visitor);
+        }
+        for (int i = node.first; i < node.last; ++i) {
+            const LineSegment &segment = m_segments[i];
+            if (overlapsInclusive(segment.bounds(), bounds) && visitor(segment)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    QVector<LineSegment> m_segments;
+    QVector<Node> m_nodes;
+};
+
+QVector<LineSegment> lineSegments(const QVector<QPointF> &points)
+{
+    QVector<LineSegment> segments;
+    segments.reserve(qMax<qsizetype>(0, points.size() - 1));
+    for (int i = 0; i + 1 < points.size(); ++i) {
+        segments.append({points[i], points[i + 1]});
+    }
+    return segments;
 }
 
 /// Indices of the dense samples the eraser touches.
 QVector<bool> touchedSamples(const QVector<KomaLineartPoint> &dense, const QVector<QPointF> &eraserPath, qreal radius)
 {
     QVector<bool> touched(dense.size(), false);
+    if (eraserPath.isEmpty()) {
+        return touched;
+    }
+    QVector<LineSegment> segments = lineSegments(eraserPath);
+    if (segments.isEmpty()) {
+        segments.append({eraserPath.first(), eraserPath.first()});
+    }
+    const SegmentIndex index(std::move(segments));
     for (int i = 0; i < dense.size(); ++i) {
-        touched[i] = distanceToPolyline(dense[i].position, eraserPath) <= radius + dense[i].width / 2.0;
+        const qreal reach = radius + dense[i].width / 2.0;
+        if (reach < 0) {
+            continue;
+        }
+        const QPointF point = dense[i].position;
+        const QRectF search(point.x() - reach, point.y() - reach, 2 * reach, 2 * reach);
+        touched[i] = index.visit(search, [&](const LineSegment &segment) {
+            qreal t = 0;
+            return segmentDistance(point, segment.a, segment.b, &t) <= reach;
+        });
     }
     return touched;
 }
@@ -578,16 +783,22 @@ QVector<QVector<KomaLineartPoint>> KomaLineartShape::eraseUpToIntersection(const
     }
 
     // Where this line crosses the others, as fractional sample indices.
+    QVector<LineSegment> otherSegments;
+    for (const QVector<QPointF> &other : otherLines) {
+        otherSegments += lineSegments(other);
+    }
+    const SegmentIndex index(std::move(otherSegments));
     QVector<qreal> crossings;
     for (int i = 0; i + 1 < dense.size(); ++i) {
-        for (const QVector<QPointF> &other : otherLines) {
-            for (int k = 0; k + 1 < other.size(); ++k) {
-                qreal t = 0;
-                if (crossing(dense[i].position, dense[i + 1].position, other[k], other[k + 1], &t)) {
-                    crossings.append(i + t);
-                }
+        const QPointF first = dense[i].position;
+        const QPointF last = dense[i + 1].position;
+        index.visit(QRectF(first, last).normalized(), [&](const LineSegment &segment) {
+            qreal t = 0;
+            if (crossing(first, last, segment.a, segment.b, &t)) {
+                crossings.append(i + t);
             }
-        }
+            return false;
+        });
     }
     std::sort(crossings.begin(), crossings.end());
 

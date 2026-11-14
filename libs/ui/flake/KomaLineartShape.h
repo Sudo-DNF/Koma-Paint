@@ -197,10 +197,13 @@ private:
     QString m_brushMd5;
     qreal m_fullPressureWidth {1.0};
 
-    mutable QMutex m_renderMutex;
-    mutable QImage m_render;
-    mutable QRectF m_renderRect;   ///< Shape coordinates the render covers.
-    mutable qreal m_renderScale {0.0};
+    struct RenderCache {
+        RenderCache();
+        QMutex mutex;
+        quint64 id;
+    };
+    mutable QMutex m_cacheMutex;
+    QSharedPointer<RenderCache> m_renderCache {new RenderCache};
 };
 
 /**
