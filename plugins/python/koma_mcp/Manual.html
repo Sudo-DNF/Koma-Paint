@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Koma MCP Bridge</title></head>
+<body>
+<h1>Koma MCP Bridge</h1>
+<p>This plugin opens a localhost-only socket that the Koma Paint MCP server
+(<code>dev-tools/komapaint-mcp/komapaint_mcp.py</code> in the source tree)
+uses to inspect and drive Koma Paint: documents, layers, brushes, tools,
+actions, dockers, widgets, synthetic canvas input, screenshots and a Python
+console.</p>
+<p>Every connection must authenticate with the session token. The port and
+token are written to <code>komapaint-mcp.json</code> in the user runtime
+directory (readable by the current user only) and removed when Koma Paint
+exits.</p>
+<p>The bridge executes arbitrary Python sent by the MCP client. Enable it only
+on machines and sessions you use for development.</p>
+<p>Environment variables:</p>
+<ul>
+<li><code>KOMA_MCP_PORT</code>: port to listen on (default: any free port).</li>
+<li><code>KOMA_MCP_TOKEN</code>: session token (default: random).</li>
+<li><code>KRITA_ENABLE_PYTHON_PLUGINS=koma_mcp</code>: load the plugin for
+this session without enabling it in the settings.</li>
+</ul>
+</body>
+</html>

@@ -34,6 +34,26 @@ static QString currentLocale()
     }
 }
 
+/**
+ * Module names listed (comma separated) in KRITA_ENABLE_PYTHON_PLUGINS are
+ * loaded for this session even when they are disabled in the settings. Test
+ * and debugging harnesses use this to bring up a plugin such as koma_mcp in a
+ * fresh profile without writing to the user's kritarc.
+ */
+static QStringList pluginsEnabledByEnvironment()
+{
+    QStringList modules;
+    const QStringList entries =
+        qEnvironmentVariable("KRITA_ENABLE_PYTHON_PLUGINS").split(QLatin1Char(','), Qt::SkipEmptyParts);
+    for (const QString &entry : entries) {
+        const QString module = entry.trimmed();
+        if (!module.isEmpty()) {
+            modules.append(module);
+        }
+    }
+    return modules;
+}
+
 PythonPluginManager* instance = 0;
 
 // PythonPlugin implementation
@@ -289,6 +309,7 @@ void PythonPluginManager::scanPlugins()
     KConfigGroup pluginSettings(KSharedConfig::openConfig(), "python");
 
     QStringList desktopFiles = KoResourcePaths::findAllAssets("data", "pykrita/*desktop");
+    const QStringList enabledByEnvironment = pluginsEnabledByEnvironment();
 
     Q_FOREACH(const QString &desktopFile, desktopFiles) {
 
@@ -320,7 +341,8 @@ void PythonPluginManager::scanPlugins()
 
             verifyDependenciesSetStatus(plugin);
 
-            plugin.m_enabled = pluginSettings.readEntry(QString("enable_") + plugin.moduleName(), false);
+            plugin.m_enabled = enabledByEnvironment.contains(plugin.moduleName())
+                || pluginSettings.readEntry(QString("enable_") + plugin.moduleName(), false);
 
             m_plugins.append(plugin);
         }

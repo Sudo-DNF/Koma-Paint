@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Service
+ServiceTypes=Krita/PythonPlugin
+X-KDE-Library=koma_mcp
+X-Python-2-Compatible=false
+X-Krita-Manual=Manual.html
+Name=Koma MCP Bridge
+Comment=Lets the Koma Paint MCP server inspect and drive this session for automated testing and debugging. Listens on localhost only and requires a per-session token.

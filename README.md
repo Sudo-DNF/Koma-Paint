@@ -85,6 +85,10 @@ Settings and resources are shared with Krita's locations (`kritarc` and the Krit
 
 For everything else about building, see the [Krita build documentation](https://docs.krita.org/en/untranslatable_pages/building_krita.html). It applies to Koma Paint as well.
 
+## Testing and debugging with MCP
+
+Koma Paint ships an [MCP](https://modelcontextprotocol.io) server for automated testing and debugging. An MCP client such as Claude Code can launch Koma Paint (headless if needed), paint with the real tools, operate dockers and dialogs, take screenshots, check pixels and read the console output. The repository's `.mcp.json` registers it for Claude Code. See [dev-tools/komapaint-mcp](dev-tools/komapaint-mcp/README.md).
+
 ## Learning to paint with it
 
 Koma Paint uses Krita's painting engine, so most of the [Krita manual](https://docs.krita.org/en/user_manual.html) applies. That covers brushes, layers, filters, selections and animation.
