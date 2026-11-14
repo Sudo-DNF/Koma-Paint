@@ -892,8 +892,9 @@ void KomaLineartBenchmark::denseEraser()
         recorder.add(point(k), 1.0);
         eventTimes.append(timer.nsecsElapsed());
         view.fill(Qt::transparent);
-        frames100.append(paintRecorderFrame(recorder, dirty, point(k), 1.0, view));
-        frames400.append(paintRecorderFrame(recorder, dirty, point(k), 4.0, view));
+        // The canvas holds still while the eraser moves across it.
+        frames100.append(paintRecorderFrame(recorder, dirty, point(samples / 2), 1.0, view));
+        frames400.append(paintRecorderFrame(recorder, dirty, point(samples / 2), 4.0, view));
     }
     QVector<qint64> releaseTimes;
     int changedLines = 0;
