@@ -322,7 +322,7 @@ void KomaLineartRecorder::finish()
                 KUndo2Command *command = new KUndo2Command(kundo2_i18n("Erase Lines"));
                 if (m_eraserMode == EraserMode::WholeLine) {
                     QList<KoShape*> shapes;
-                    for (KomaLineartShape *line : std::as_const(m_erased)) {
+                    for (KomaLineartShape *line : erasedInLayerOrder()) {
                         shapes.append(line);
                     }
                     m_canvas->shapeController()->removeShapes(shapes, command);
@@ -361,6 +361,23 @@ void KomaLineartRecorder::finish()
     m_image = nullptr;
 }
 
+QVector<KomaLineartShape*> KomaLineartRecorder::erasedInLayerOrder() const
+{
+    QVector<KomaLineartShape*> ordered;
+    if (!m_layer || m_erased.isEmpty()) {
+        return ordered;
+    }
+    ordered.reserve(m_erased.size());
+    const QList<KoShape*> shapes = m_layer->shapes();
+    for (KoShape *shape : shapes) {
+        KomaLineartShape *line = dynamic_cast<KomaLineartShape*>(shape);
+        if (line && m_erased.contains(line)) {
+            ordered.append(line);
+        }
+    }
+    return ordered;
+}
+
 QVector<KomaLineartRecorder::PartialErase> KomaLineartRecorder::partialErase() const
 {
     QVector<PartialErase> result;
@@ -396,7 +413,7 @@ QVector<KomaLineartRecorder::PartialErase> KomaLineartRecorder::partialErase() c
 
     // One index of every line's segments serves all the erased lines.
     const KomaLineartShape::LineIndex crossingLines(allLines);
-    for (KomaLineartShape *line : std::as_const(m_erased)) {
+    for (KomaLineartShape *line : erasedInLayerOrder()) {
         QVector<KomaLineartPoint> dense;
         QVector<QVector<KomaLineartPoint>> pieces;
         if (m_eraserMode == EraserMode::UpToIntersection) {
