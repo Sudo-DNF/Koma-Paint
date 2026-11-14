@@ -25,6 +25,14 @@ private Q_SLOTS:
     void rasterFinish_data();
     void rasterFinish();
     void populatedVectorRender();
+
+    // Interactive work on a vector layer that already holds 220 lines.
+    void denseInkStroke();
+    void denseEraser_data();
+    void denseEraser();
+    void denseControlPointDrag();
+    void denseAdjustWidth();
+    void denseLayerRepaint();
 };
 
 #endif

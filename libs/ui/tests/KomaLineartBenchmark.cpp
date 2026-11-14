@@ -6,7 +6,9 @@
 
 #include "flake/KomaLineartShape.h"
 #include "flake/kis_shape_layer.h"
+#include "tool/KomaLineartEditor.h"
 #include "tool/KomaLineartPreview.h"
+#include "tool/KomaLineartRecorder.h"
 #include "tool/KisAsynchronousStrokeUpdateHelper.h"
 #include "tool/kis_resources_snapshot.h"
 #include "tool/strokes/KisFreehandStrokeInfo.h"
@@ -20,6 +22,7 @@
 #include <cmath>
 #include <cstdio>
 #include <memory>
+#include <mutex>
 #include <tuple>
 
 #include <KisLocalStrokeResources.h>
@@ -29,6 +32,9 @@
 #include <KoColor.h>
 #include <KoColorSpaceRegistry.h>
 #include <KoCompositeOpRegistry.h>
+#include <KoShapeManager.h>
+#include <KoViewConverter.h>
+#include <KisGlobalResourcesInterface.h>
 #include <brushengine/kis_paint_information.h>
 #include <brushengine/kis_paintop.h>
 #include <brushengine/kis_paintop_preset.h>
@@ -514,6 +520,428 @@ void KomaLineartBenchmark::populatedVectorRender()
     auto ms = [&](int percentile) { return times[(times.size() - 1) * percentile / 100] / 1000000.0; };
     std::printf("Eight overlapping 4K vector renders, ms: p50 %.3f p95 %.3f p99 %.3f max %.3f\n",
                 ms(50), ms(95), ms(99), times.last() / 1000000.0);
+}
+
+
+namespace
+{
+/// Pixels per document unit of a 300 ppi image.
+constexpr qreal denseResolution = 300.0 / 72.0;
+constexpr int denseLineCount = 220;
+constexpr qreal denseBrushPixels = 8.0;
+
+/// Prints p50/p95/p99/max of @p times (nanoseconds) in milliseconds and returns p95.
+double printPercentiles(const char *name, QVector<qint64> times)
+{
+    if (times.isEmpty()) {
+        std::printf("%s: no samples\n", name);
+        return 0;
+    }
+    std::sort(times.begin(), times.end());
+    auto ms = [&](int percentile) { return times[(times.size() - 1) * percentile / 100] / 1000000.0; };
+    std::printf("%s, ms: p50 %.3f p95 %.3f p99 %.3f max %.3f (n=%lld)\n",
+                name, ms(50), ms(95), ms(99), times.last() / 1000000.0, qint64(times.size()));
+    std::fflush(stdout);
+    return ms(95);
+}
+
+QPointF wavePoint(const QPointF &start, const QPointF &end, qreal amplitude, qreal phase, qreal t)
+{
+    const QPointF chord = end - start;
+    const qreal length = std::hypot(chord.x(), chord.y());
+    const QPointF normal(-chord.y() / length, chord.x() / length);
+    return start + chord * t + normal * amplitude * std::sin(t * M_PI * 2 + phase);
+}
+
+/**
+ * A 2400x1600 px image at 300 ppi with a vector layer holding 220 crossing
+ * lineart strokes, each rendered with a round brush and a pressure taper,
+ * built the way KomaLineartRecorder builds them.
+ */
+struct DenseLineart {
+    std::unique_ptr<TestUtil::MaskParent> parent;
+    KisShapeLayerSP layer;
+    KisPaintOpPresetSP preset;   ///< The current brush, 8 px.
+    QVector<KomaLineartShape*> lines;
+
+    bool create()
+    {
+        parent.reset(new TestUtil::MaskParent(QRect(0, 0, 2400, 1600)));
+        parent->image->setResolution(denseResolution, denseResolution);
+        layer = new KisShapeLayer(nullptr, parent->image, "lineart", 255);
+        parent->image->addNode(layer);
+        parent->waitForImageAndShapeLayers();
+
+        preset = KisPaintOpPresetSP(new KisPaintOpPreset(TestUtil::fetchDataFileLazy("autobrush_300px.kpp")));
+        if (!preset->load(KisGlobalResourcesInterface::instance())) {
+            return false;
+        }
+        preset->settings()->setPaintOpSize(denseBrushPixels);
+        const KisPaintOpPresetSP snapshot = KomaLineartShape::brushSnapshot(preset, Qt::black);
+
+        std::srand(7);
+        auto random = [](qreal low, qreal high) { return low + (high - low) * (std::rand() / qreal(RAND_MAX)); };
+        for (int index = 0; index < denseLineCount; ++index) {
+            QPointF start;
+            QPointF end;
+            if (index < denseLineCount / 2) {
+                const qreal y = 60 + index * 13.2;
+                const qreal x = random(40, 900);
+                start = QPointF(x, y);
+                end = QPointF(x + random(600, 1400), y + random(-60, 60));
+            } else {
+                const qreal x = 60 + (index - denseLineCount / 2) * 20.5;
+                const qreal y = random(40, 600);
+                start = QPointF(x, y);
+                end = QPointF(x + random(-80, 80), y + random(500, 950));
+            }
+            const qreal amplitude = random(5, 30);
+            const qreal phase = random(0, 6.28);
+            const int samples = qMax(20, int(std::hypot(end.x() - start.x(), end.y() - start.y()) / 6.0));
+            QVector<KomaLineartPoint> raw;
+            for (int k = 0; k <= samples; ++k) {
+                const qreal t = qreal(k) / samples;
+                const qreal pressure = 0.2 + 0.8 * std::sin(M_PI * t);
+                const qreal width = denseBrushPixels / denseResolution
+                        * (KomaLineartShape::minimumPressureShare
+                           + (1 - KomaLineartShape::minimumPressureShare) * pressure);
+                raw.append({wavePoint(start, end, amplitude, phase, t) / denseResolution, width});
+            }
+            auto *shape = new KomaLineartShape;
+            shape->setLineColor(Qt::black);
+            shape->setCenterlineInDocument(KomaLineartShape::processRawStroke(raw, 0.35 / denseResolution));
+            shape->setBrush(snapshot, denseBrushPixels / denseResolution);
+            layer->addShape(shape);
+            lines.append(shape);
+        }
+        settle();
+        return true;
+    }
+
+    /// Lets the vector layer finish every pending repaint.
+    void settle()
+    {
+        QCoreApplication::processEvents();
+        layer->forceUpdateTimedNode();
+        parent->image->waitForDone();
+        QCoreApplication::processEvents();
+    }
+
+    KomaLineartRecorder::Target target(KomaLineartRecorder::EraserMode mode,
+                                       std::function<void(const QRectF &)> updateCanvas)
+    {
+        KomaLineartRecorder::Target result;
+        result.image = parent->image;
+        result.layer = layer.data();
+        result.preset = preset;
+        result.color = Qt::black;
+        result.eraserMode = mode;
+        result.updateCanvas = updateCanvas;
+        return result;
+    }
+};
+
+/**
+ * Paints what the canvas paints for the recorder after an input event: the
+ * live preview or eraser overlay, clipped to the rect the event updated,
+ * into a 1920x1080 view at @p zoom (1 = 100%) that follows @p focus.
+ */
+qint64 paintRecorderFrame(const KomaLineartRecorder &recorder, const QRectF &dirtyDocumentRect,
+                          const QPointF &focus, qreal zoom, QImage &view)
+{
+    KoViewConverter converter;
+    converter.setZoom(denseResolution * zoom);
+    const QPointF focusInView = converter.documentToView(focus);
+    const QPointF offset = QPointF(view.width() / 2.0, view.height() / 2.0) - focusInView;
+    QElapsedTimer timer;
+    timer.start();
+    QPainter painter(&view);
+    painter.translate(offset);
+    painter.setClipRect(converter.documentToView(dirtyDocumentRect));
+    recorder.paint(painter, converter);
+    painter.end();
+    return timer.nsecsElapsed();
+}
+
+/// Total area of the image updates reported while it is alive.
+class ImageUpdateArea
+{
+public:
+    explicit ImageUpdateArea(KisImageSP image)
+    {
+        m_connection = QObject::connect(image.data(), &KisImage::sigImageUpdated, image.data(),
+                                        [this](const QRect &rect) {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_area += qint64(rect.width()) * rect.height();
+            m_lastUpdate = m_clock.nsecsElapsed();
+        }, Qt::DirectConnection);
+        m_clock.start();
+    }
+    ~ImageUpdateArea()
+    {
+        QObject::disconnect(m_connection);
+    }
+    qint64 takeArea()
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const qint64 area = m_area;
+        m_area = 0;
+        return area;
+    }
+
+private:
+    QMetaObject::Connection m_connection;
+    std::mutex m_mutex;
+    qint64 m_area {0};
+    qint64 m_lastUpdate {0};
+    QElapsedTimer m_clock;
+};
+
+/**
+ * Runs @p count edits at a 120 Hz input cadence with the event loop running,
+ * as during a drag, and reports for each edit: the time the edit itself
+ * takes, the time until the layer's projection shows it (the vector layer
+ * compresses its updates), and, separately, the cost of repainting the
+ * layer's dirty region after one edit.
+ */
+void measureLayerEdits(const char *name, DenseLineart &dense, int count, const std::function<void(int)> &edit)
+{
+    constexpr qint64 cadence = 8333333; // 120 Hz
+    KisImageSP image = dense.parent->image;
+    QVector<qint64> eventTimes;
+    QVector<qint64> latencies;
+    QVector<qint64> repaintTimes;
+    qint64 largestUpdate = 0;
+    {
+        ImageUpdateArea area(image);
+        QElapsedTimer clock;
+        clock.start();
+        for (int i = 0; i < count; ++i) {
+            while (clock.nsecsElapsed() < i * cadence) {
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
+            }
+            const qint64 start = clock.nsecsElapsed();
+            edit(i);
+            eventTimes.append(clock.nsecsElapsed() - start);
+            // Wait, with the event loop running, until the edit reached the projection.
+            while (dense.layer->hasPendingTimedUpdates()) {
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
+            }
+            image->waitForDone();
+            latencies.append(clock.nsecsElapsed() - start);
+            largestUpdate = qMax(largestUpdate, area.takeArea());
+        }
+    }
+    // The repaint work alone: one more edit each, repainted immediately.
+    for (int i = 0; i < qMin(count, 60); ++i) {
+        edit(count + i);
+        QElapsedTimer timer;
+        timer.start();
+        dense.layer->forceUpdateTimedNode();
+        image->waitForDone();
+        repaintTimes.append(timer.nsecsElapsed());
+    }
+    QByteArray label(name);
+    printPercentiles(QByteArray(label + ": per input event").constData(), eventTimes);
+    printPercentiles(QByteArray(label + ": event to layer projection updated (120 Hz input)").constData(), latencies);
+    printPercentiles(QByteArray(label + ": dirty-region layer repaint").constData(), repaintTimes);
+    std::printf("%s: largest projection update after one event %.1f%% of the layer\n",
+                name, 100.0 * largestUpdate / (image->width() * qreal(image->height())));
+    std::fflush(stdout);
+    dense.settle();
+}
+}
+
+void KomaLineartBenchmark::denseInkStroke()
+{
+    DenseLineart dense;
+    QVERIFY(dense.create());
+
+    QRectF dirty;
+    KomaLineartRecorder recorder;
+    QVector<qint64> eventTimes;
+    QVector<qint64> frames100;
+    QVector<qint64> frames400;
+    QImage view(1920, 1080, QImage::Format_ARGB32_Premultiplied);
+    const int samples = 640;
+    auto point = [](int k) {
+        return QPointF(100 + k * 3.5, 800 + 500 * std::sin(k / 70.0)) / denseResolution;
+    };
+    auto pressure = [](int k) { return 0.25 + 0.75 * std::abs(std::sin(k / 45.0)); };
+    QVERIFY(recorder.begin(dense.target(KomaLineartRecorder::EraserMode::UpToIntersection,
+                                        [&dirty](const QRectF &rect) { dirty |= rect; }),
+                           point(0), pressure(0), false));
+    for (int k = 1; k < samples; ++k) {
+        dirty = QRectF();
+        QElapsedTimer timer;
+        timer.start();
+        recorder.add(point(k), pressure(k));
+        eventTimes.append(timer.nsecsElapsed());
+        view.fill(Qt::transparent);
+        frames100.append(paintRecorderFrame(recorder, dirty, point(k), 1.0, view));
+        frames400.append(paintRecorderFrame(recorder, dirty, point(k), 4.0, view));
+    }
+    recorder.cancel();
+    printPercentiles("Ink stroke over 220 lines (640 samples): per input event", eventTimes);
+    printPercentiles("Ink stroke over 220 lines: preview frame at 100%", frames100);
+    printPercentiles("Ink stroke over 220 lines: preview frame at 400%", frames400);
+}
+
+void KomaLineartBenchmark::denseEraser_data()
+{
+    QTest::addColumn<int>("mode");
+    QTest::newRow("touched-area") << int(KomaLineartRecorder::EraserMode::TouchedArea);
+    QTest::newRow("up-to-intersection") << int(KomaLineartRecorder::EraserMode::UpToIntersection);
+    QTest::newRow("whole-line") << int(KomaLineartRecorder::EraserMode::WholeLine);
+}
+
+void KomaLineartBenchmark::denseEraser()
+{
+    QFETCH(int, mode);
+    DenseLineart dense;
+    QVERIFY(dense.create());
+    // A 24 px eraser, as in the reference scenario.
+    dense.preset->settings()->setPaintOpSize(24);
+
+    QRectF dirty;
+    KomaLineartRecorder recorder;
+    QVector<qint64> eventTimes;
+    QVector<qint64> frames100;
+    QVector<qint64> frames400;
+    QImage view(1920, 1080, QImage::Format_ARGB32_Premultiplied);
+    const int samples = 400;
+    auto point = [](int k) {
+        return QPointF(150 + k * 5.2, 150 + k * 3.2 + 40 * std::sin(k / 12.0)) / denseResolution;
+    };
+    QVERIFY(recorder.begin(dense.target(KomaLineartRecorder::EraserMode(mode),
+                                        [&dirty](const QRectF &rect) { dirty |= rect; }),
+                           point(0), 1.0, true));
+    for (int k = 1; k < samples; ++k) {
+        dirty = QRectF();
+        QElapsedTimer timer;
+        timer.start();
+        recorder.add(point(k), 1.0);
+        eventTimes.append(timer.nsecsElapsed());
+        view.fill(Qt::transparent);
+        frames100.append(paintRecorderFrame(recorder, dirty, point(k), 1.0, view));
+        frames400.append(paintRecorderFrame(recorder, dirty, point(k), 4.0, view));
+    }
+    QVector<qint64> releaseTimes;
+    int changedLines = 0;
+    for (int i = 0; i < 5; ++i) {
+        QElapsedTimer timer;
+        timer.start();
+        changedLines = recorder.partialErase().size();
+        releaseTimes.append(timer.nsecsElapsed());
+    }
+    recorder.cancel();
+    const QByteArray name = QByteArray("Eraser ") + QTest::currentDataTag() + " over 220 lines (400 samples)";
+    printPercentiles(QByteArray(name + ": per input event").constData(), eventTimes);
+    printPercentiles(QByteArray(name + ": overlay frame at 100%").constData(), frames100);
+    printPercentiles(QByteArray(name + ": overlay frame at 400%").constData(), frames400);
+    if (KomaLineartRecorder::EraserMode(mode) != KomaLineartRecorder::EraserMode::WholeLine) {
+        std::printf("%s: release geometry for %d changed lines\n", name.constData(), changedLines);
+        printPercentiles(QByteArray(name + ": release geometry").constData(), releaseTimes);
+    }
+}
+
+void KomaLineartBenchmark::denseControlPointDrag()
+{
+    DenseLineart dense;
+    QVERIFY(dense.create());
+    KomaLineartShape *line = dense.lines[150];
+    const QVector<KomaLineartPoint> points = line->centerlineInDocument();
+    const QPointF grab = points[points.size() / 2].position;
+
+    KomaLineartEditor editor;
+    QVERIFY(editor.pickPoint(dense.layer.data(), grab, 8.0 / denseResolution));
+    QCOMPARE(editor.pickedLine(), line);
+    measureLayerEdits("Control point drag over 220 lines", dense, 240, [&](int i) {
+        const qreal angle = i / 20.0;
+        editor.movePickedPoint(grab + QPointF(60 * std::sin(angle), 40 * (1 - std::cos(angle))) / denseResolution);
+    });
+}
+
+void KomaLineartBenchmark::denseAdjustWidth()
+{
+    DenseLineart dense;
+    QVERIFY(dense.create());
+    KomaLineartEditor editor;
+    const qreal radius = 20.0 / denseResolution;
+    const qreal factor = 1.0 + 0.12 * 30 / 100.0;
+    measureLayerEdits("Adjust Line Width over 220 lines", dense, 240, [&](int i) {
+        const qreal t = (i % 240) / 240.0;
+        const QPointF point = QPointF(1500 + 400 * t, 300 + 800 * t + 30 * std::sin(i / 7.0)) / denseResolution;
+        editor.adjustWidth(dense.layer.data(), point, radius, factor);
+    });
+}
+
+void KomaLineartBenchmark::denseLayerRepaint()
+{
+    DenseLineart dense;
+    QVERIFY(dense.create());
+    KisImageSP image = dense.parent->image;
+
+    // The whole vector layer regenerated at image resolution (as after
+    // loading), first with every line's brush render cache cold, then warm.
+    QVector<qint64> cold;
+    QVector<qint64> warm;
+    for (int i = 0; i < 6; ++i) {
+        const bool coldRun = i % 2 == 0;
+        if (coldRun) {
+            // Drop every line's cached render; the repaint below renders them all.
+            for (KomaLineartShape *line : dense.lines) {
+                line->setBrush(line->brush(), line->fullPressureWidth());
+            }
+        }
+        QElapsedTimer timer;
+        timer.start();
+        dense.layer->forceUpdateHiddenAreaOnOriginal();
+        image->waitForDone();
+        (coldRun ? cold : warm).append(timer.nsecsElapsed());
+    }
+    printPercentiles("Full vector layer repaint, 220 lines, cold render cache", cold);
+    printPercentiles("Full vector layer repaint, 220 lines, warm render cache", warm);
+
+    // The lines painted straight into a 1920x1080 view panning across the
+    // image, at 1x and 4x the image resolution (as when a document is
+    // rendered at a higher resolution): first pass with cold caches, then
+    // warm. The canvas itself shows the layer's projection at any zoom; this
+    // is the cost of rendering the lines themselves at a larger scale.
+    for (const qreal zoom : {1.0, 4.0}) {
+        QImage view(1920, 1080, QImage::Format_ARGB32_Premultiplied);
+        QVector<qint64> coldFrames;
+        QVector<qint64> warmFrames;
+        const QSizeF viewInImage(1920 / zoom, 1080 / zoom);
+        for (int pass = 0; pass < 2; ++pass) {
+            for (int frame = 0; frame < 24; ++frame) {
+                const QPointF origin((2400 - viewInImage.width()) * (frame % 6) / 5.0,
+                                     (1600 - viewInImage.height()) * (frame / 6) / 3.0);
+                const QRectF visible = QRectF(origin, viewInImage);
+                const QRectF visibleDocument(visible.topLeft() / denseResolution, visible.size() / denseResolution);
+                QElapsedTimer timer;
+                timer.start();
+                view.fill(Qt::transparent);
+                QPainter painter(&view);
+                painter.setRenderHint(QPainter::Antialiasing);
+                painter.scale(zoom, zoom);
+                painter.translate(-origin);
+                painter.scale(denseResolution, denseResolution);
+                for (KoShape *shape : dense.layer->shapeManager()->shapesAt(visibleDocument)) {
+                    painter.save();
+                    painter.setTransform(shape->absoluteTransformation(), true);
+                    shape->paint(painter);
+                    painter.restore();
+                }
+                painter.end();
+                (pass == 0 ? coldFrames : warmFrames).append(timer.nsecsElapsed());
+            }
+        }
+        const QByteArray label = QByteArray("Lines painted directly at ")
+                + QByteArray::number(int(zoom * 100)) + "% of image resolution into a 1920x1080 view";
+        printPercentiles(QByteArray(label + ", first pass").constData(), coldFrames);
+        printPercentiles(QByteArray(label + ", repeated").constData(), warmFrames);
+    }
 }
 
 SIMPLE_TEST_MAIN(KomaLineartBenchmark)
