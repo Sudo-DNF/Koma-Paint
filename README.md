@@ -8,7 +8,11 @@ Koma Paint is based on [Krita](https://krita.org) and keeps its painting engine,
 
 Development used AI coding assistants; the app itself contains no generative AI features. Its only MCP support is an opt-in developer plugin for automated testing, off by default.
 
-**Contents:** [The workspace](#the-workspace) · [Features](#features) · [Vector lineart](#vector-lineart) · [Working with Krita](#working-with-krita) · [Status](#status) · [Building](#building) · [Testing and debugging with MCP](#testing-and-debugging-with-mcp) · [Licence](#licence)
+**Contents:** [Why make this?](#why-make-this) · [The workspace](#the-workspace) · [Features](#features) · [Vector lineart](#vector-lineart) · [Working with Krita](#working-with-krita) · [Status](#status) · [Building](#building) · [Testing and debugging with MCP](#testing-and-debugging-with-mcp) · [Licence](#licence)
+
+## Why make this?
+
+I love drawing in Clip Studio Paint, but there aren't any applications on Linux with similar features for vector lineart. So I'm building my own alternative with Clip Studio's features, and making it open source so that not just me but everyone else can benefit from it.
 
 ## The workspace
 
