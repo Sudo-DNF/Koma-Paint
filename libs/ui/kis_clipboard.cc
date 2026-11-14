@@ -358,9 +358,12 @@ KisImageSP KisClipboard::clipFromBoardContentsWithData(
 
 void KisClipboard::clipboardDataChanged()
 {
-    d->hasClip = d->clipboard->mimeData()->hasImage();
+    // Platforms without a system clipboard (e.g. Qt's offscreen platform)
+    // report no clipboard data at all rather than empty data.
+    const QMimeData *data = d->clipboard->mimeData();
+    d->hasClip = data && data->hasImage();
 
-    const KisMimeData *mimedata = qobject_cast<const KisMimeData *>(d->clipboard->mimeData());
+    const KisMimeData *mimedata = qobject_cast<const KisMimeData *>(data);
     if (mimedata) {
         d->referenceColorSpace = mimedata->referenceColorSpace();
     } else {
@@ -406,7 +409,8 @@ void KisClipboard::setLayers(KisNodeList nodes, KisImageSP image, const QRect re
 bool KisClipboard::hasLayers() const
 {
     const QByteArray mimeType = QByteArrayLiteral("application/x-krita-node-internal-pointer");
-    return d->clipboard->mimeData()->hasFormat(mimeType);
+    const QMimeData *cbData = d->clipboard->mimeData();
+    return cbData && cbData->hasFormat(mimeType);
 }
 
 bool KisClipboard::hasLayerStyles() const
@@ -415,24 +419,27 @@ bool KisClipboard::hasLayerStyles() const
     //       result of this function, because we allow pasting
     //       of the layer styles as 'text/plain'
 
-    return d->clipboard->mimeData()->hasFormat("application/x-krita-layer-style");
+    const QMimeData *cbData = d->clipboard->mimeData();
+    return cbData && cbData->hasFormat("application/x-krita-layer-style");
 }
 
 const QMimeData *KisClipboard::layersMimeData() const
 {
     const QMimeData *cbData = d->clipboard->mimeData();
-    return cbData->hasFormat("application/x-krita-node-internal-pointer") ? cbData : 0;
+    return cbData && cbData->hasFormat("application/x-krita-node-internal-pointer") ? cbData : nullptr;
 }
 
 bool KisClipboard::hasUrls() const
 {
-    return d->clipboard->mimeData()->hasUrls();
+    const QMimeData *cbData = d->clipboard->mimeData();
+    return cbData && cbData->hasUrls();
 }
 
 
 bool KisClipboard::hasImage() const
 {
-    return d->clipboard->mimeData()->hasImage();
+    const QMimeData *cbData = d->clipboard->mimeData();
+    return cbData && cbData->hasImage();
 }
 
 QImage KisClipboard::getImageFromMimeData(const QMimeData *cbData) const
