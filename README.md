@@ -18,7 +18,7 @@ Clip Studio Paint is a trademark Celsys, I am not associated with the company in
 
 ## Made with Koma Paint
 
-A demo illustration drawn in Koma Paint:
+A demo illustration drawn in Koma Paint, with its lineart on a vector layer:
 
 ![A bearded man in grey body armour and a brown backpack, drawn with clean black lineart against a dark sky with falling snow](screenshots/demo-artwork.png)
 
