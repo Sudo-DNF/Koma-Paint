@@ -882,29 +882,37 @@ void KomaLineartBenchmark::denseEraser()
     auto point = [](int k) {
         return QPointF(150 + k * 5.2, 150 + k * 3.2 + 40 * std::sin(k / 12.0)) / denseResolution;
     };
-    QVERIFY(recorder.begin(dense.target(KomaLineartRecorder::EraserMode(mode),
-                                        [&dirty](const QRectF &rect) { dirty |= rect; }),
-                           point(0), 1.0, true));
-    for (int k = 1; k < samples; ++k) {
-        dirty = QRectF();
-        QElapsedTimer timer;
-        timer.start();
-        recorder.add(point(k), 1.0);
-        eventTimes.append(timer.nsecsElapsed());
-        view.fill(Qt::transparent);
-        // The canvas holds still while the eraser moves across it.
-        frames100.append(paintRecorderFrame(recorder, dirty, point(samples / 2), 1.0, view));
-        frames400.append(paintRecorderFrame(recorder, dirty, point(samples / 2), 4.0, view));
-    }
+    // One stroke per zoom: a stroke is drawn on one canvas, which holds still
+    // while the eraser moves across it. The first stroke also times the
+    // input events and the release.
     QVector<qint64> releaseTimes;
     int changedLines = 0;
-    for (int i = 0; i < 5; ++i) {
-        QElapsedTimer timer;
-        timer.start();
-        changedLines = recorder.partialErase().size();
-        releaseTimes.append(timer.nsecsElapsed());
+    for (const qreal zoom : {1.0, 4.0}) {
+        QVector<qint64> &frames = zoom == 1.0 ? frames100 : frames400;
+        QVERIFY(recorder.begin(dense.target(KomaLineartRecorder::EraserMode(mode),
+                                            [&dirty](const QRectF &rect) { dirty |= rect; }),
+                               point(0), 1.0, true));
+        for (int k = 1; k < samples; ++k) {
+            dirty = QRectF();
+            QElapsedTimer timer;
+            timer.start();
+            recorder.add(point(k), 1.0);
+            if (zoom == 1.0) {
+                eventTimes.append(timer.nsecsElapsed());
+            }
+            view.fill(Qt::transparent);
+            frames.append(paintRecorderFrame(recorder, dirty, point(samples / 2), zoom, view));
+        }
+        if (zoom == 1.0) {
+            for (int i = 0; i < 5; ++i) {
+                QElapsedTimer timer;
+                timer.start();
+                changedLines = recorder.partialErase().size();
+                releaseTimes.append(timer.nsecsElapsed());
+            }
+        }
+        recorder.cancel();
     }
-    recorder.cancel();
     const QByteArray name = QByteArray("Eraser ") + QTest::currentDataTag() + " over 220 lines (400 samples)";
     printPercentiles(QByteArray(name + ": per input event").constData(), eventTimes);
     printPercentiles(QByteArray(name + ": overlay frame at 100%").constData(), frames100);
