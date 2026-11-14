@@ -9,7 +9,7 @@ For example: "KisMainWindow#MainWindow#0/QDockWidget#LayerBox/...".
 """
 
 from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt, QTimer
-from PyQt6.QtGui import QKeyEvent, QKeySequence, QMouseEvent, QPointingDevice, QTabletEvent
+from PyQt6.QtGui import QImage, QKeyEvent, QKeySequence, QMouseEvent, QPainter, QPointingDevice, QTabletEvent
 from PyQt6 import sip
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import (QAbstractButton, QAbstractItemView, QAbstractScrollArea,
@@ -534,9 +534,34 @@ def canvas_widget():
     raise CommandError("cannot find the canvas widget of the active view")
 
 
+def _composite_screen():
+    """The active main window with every other visible top-level window drawn over it.
+
+    Dialogs, popups and floating palettes are separate windows, so grabbing the
+    main window alone leaves them out; this shows what the user sees.
+    """
+    main = active_window().qwindow()
+    image = main.grab().toImage().convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+    ratio = image.devicePixelRatio()
+    painter = QPainter(image)
+    origin = main.frameGeometry().topLeft()
+    for widget in QApplication.topLevelWidgets():
+        if widget is main or not widget.isVisible() or widget.windowType() == Qt.WindowType.Desktop:
+            continue
+        offset = widget.geometry().topLeft() - origin
+        painter.drawPixmap(QPoint(round(offset.x()), round(offset.y())), widget.grab())
+    painter.end()
+    image.setDevicePixelRatio(ratio)
+    return main, image
+
+
 @command("ui.screenshot")
 def cmd_ui_screenshot(session, params):
     target = param(params, "target", str, "window")
+    if target == "screen":
+        main, image = _composite_screen()
+        return imaging.image_reply(image, param(params, "max_size", int, 1600), param(params, "path", str, None),
+                                   {"widget": widget_id(main), "composited": True})
     if target == "window":
         widget = _default_root()
     elif target == "canvas":

@@ -394,7 +394,9 @@ TOOLS = {
                                            "to": {"type": "string", "enum": ["widget", "image"]}}, ["points"])),
 
     "ui_screenshot": ("ui.screenshot", "Capture the UI as a PNG image: target='window' (active window, or the "
-                      "open dialog/popup), 'canvas', or a widget id. max_size limits the long edge (default 1600).",
+                      "open dialog/popup), 'screen' (the main window with open dialogs, popups and floating "
+                      "windows drawn over it, as the user sees it), 'canvas', or a widget id. max_size limits "
+                      "the long edge (default 1600).",
                       schema({"target": STR, "max_size": INT, "path": STR})),
     "ui_windows": ("ui.windows", "Visible top-level windows and dialogs, the active modal dialog, popup and "
                    "focus widget.", schema()),
