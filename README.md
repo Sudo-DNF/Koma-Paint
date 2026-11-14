@@ -12,7 +12,9 @@ Development used AI coding assistants; the app itself contains no generative AI 
 
 ## Why make this?
 
-I love drawing in Clip Studio Paint, but there aren't any applications on Linux with similar features for vector lineart. So I'm building my own alternative with Clip Studio's features, and making it open source so that not just me but everyone else can benefit from it.
+I love drawing in Clip Studio Paint, but there aren't any applications on Linux with similar features like vector lineart. So I'm building my own alternative with similar features, and making it open source so that not just me but everyone else can benefit from it.
+
+Clip Studio Paint is a trademark Celsys, I am not associated with the company in any way and all rights for their software are reserved to them.
 
 ## The workspace
 
