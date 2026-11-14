@@ -6,6 +6,8 @@ Widgets are addressed by path ids built from the top-level window down, one
 segment per level: "ClassName#objectName" when the object name is unique
 among its siblings, otherwise "ClassName[n]" (the n-th sibling of that class).
 For example: "KisMainWindow#MainWindow#0/QDockWidget#LayerBox/...".
+Object names are percent-encoded ("%" as "%25", "/" as "%2F"), so names such
+as "KritaShape/KisToolBrush option widget" stay within one segment.
 """
 
 from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt, QTimer
@@ -33,12 +35,20 @@ def _child_widgets(widget):
     return [child for child in widget.children() if isinstance(child, QWidget)]
 
 
+def _encode_name(name):
+    return name.replace("%", "%25").replace("/", "%2F")
+
+
+def _decode_name(name):
+    return name.replace("%2F", "/").replace("%25", "%")
+
+
 def _segment(widget, siblings):
     class_name = _class_name(widget)
     name = widget.objectName()
     if name and sum(1 for sibling in siblings if sibling.objectName() == name
                     and _class_name(sibling) == class_name) == 1:
-        return "%s#%s" % (class_name, name)
+        return "%s#%s" % (class_name, _encode_name(name))
     same_class = [sibling for sibling in siblings if _class_name(sibling) == class_name]
     return "%s[%d]" % (class_name, same_class.index(widget))
 
@@ -55,12 +65,13 @@ def widget_id(widget):
 
 
 def _match_segment(segment, candidates):
-    if segment.endswith("]") and "[" in segment:
+    class_name, has_name, encoded_name = segment.partition("#")
+    if not has_name and segment.endswith("]") and "[" in segment:
         class_name, index = segment[:-1].rsplit("[", 1)
         same_class = [widget for widget in candidates if _class_name(widget) == class_name]
         position = int(index)
         return same_class[position] if position < len(same_class) else None
-    class_name, _, name = segment.partition("#")
+    name = _decode_name(encoded_name)
     for widget in candidates:
         if _class_name(widget) == class_name and widget.objectName() == name:
             return widget
