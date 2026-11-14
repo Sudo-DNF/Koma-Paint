@@ -213,3 +213,33 @@ overlapping greys can differ by 1–2/255 from draw order, as two runs of the
 earlier code already did. The longest frames (over 16 ms) remain: Qt fills
 a long marked line's whole outline even when the repainted area is a narrow
 strip, so those frames repaint large or many crossing lines.
+
+### Whole-line eraser overlay: a device image
+
+Measured with one fixed view per stroke (0d44557, 665cda8): a stroke is
+drawn on one canvas, which does not pan while the pen is down. Filling the
+marked lines in every frame cost up to 25 ms, because Qt rasterises a
+path's whole outline whatever the clip. The marks are now drawn once into
+an image in device pixels and each frame copies the area it repaints
+(5e68a3c). Overlay frame, p95 / max ms, three runs each:
+
+| Zoom | Before | After |
+| --- | ---: | ---: |
+| 100% | 7.5-8.0 / 19.8-25.0 | 0.82-0.84 / 2.8-3.8 |
+| 400% | 5.2-5.7 / 15.6-16.7 | 0.92-1.07 / 2.9-4.5 |
+
+Full run afterwards (load average 3.3): per input event p95 at most
+4.4 ms and max at most 6.5 ms (Adjust Line Width); dirty-region repaint
+p95 10.3 ms (control point) and 13.0 ms (Adjust Line Width); every eraser
+overlay frame under 4.7 ms.
+
+Checked in the app with the komapaint MCP server (headless, 1920x1080, a
+220-line layer from one saved file, a mouse ink stroke, a pen stroke with
+pressure 0.1-1.0, then each eraser mode): the line counts after each step
+(222, 242, 267, 238), the saved lines and the layer's pixel statistics
+match the build before 5e68a3c, and the console shows only the usual
+fontconfig notices. The two builds stacked the pieces left by partial
+erasing in different orders; erasing now follows the layer's order
+(fix commit after 5e68a3c), and two runs give byte-identical files and
+renders.
+
