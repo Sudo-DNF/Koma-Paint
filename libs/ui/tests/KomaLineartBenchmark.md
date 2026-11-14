@@ -202,3 +202,14 @@ the build before the optimizations:
   build's own file has no remnant there, and the new build shows it the same
   as the fresh render.
 - The logs are identical apart from the MCP bridge port.
+
+### Whole-line eraser overlay: cached outlines
+
+The whole-line eraser rebuilt and mapped each marked line's outline in every
+frame. It now keeps the outline it already computed when the line was
+marked. Overlay frame at 100%, on a machine at load average 3–5, before ->
+after: p50 2.2 -> 1.7 ms, p95 8.5 -> 7.9 ms. The covered pixels are the same;
+overlapping greys can differ by 1–2/255 from draw order, as two runs of the
+earlier code already did. The longest frames (over 16 ms) remain: Qt fills
+a long marked line's whole outline even when the repainted area is a narrow
+strip, so those frames repaint large or many crossing lines.

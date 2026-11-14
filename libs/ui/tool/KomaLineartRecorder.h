@@ -148,6 +148,9 @@ private:
     EraserMode m_eraserMode {EraserMode::UpToIntersection};
     QVector<QPointF> m_eraserTrail;  ///< Eraser positions, document units.
     QSet<KomaLineartShape*> m_erased;
+    /// The document-space outlines of m_erased, taken when each was marked;
+    /// a marked line does not change while the eraser stroke lasts.
+    QVector<QPainterPath> m_erasedOutlines;
 };
 
 #endif // KOMALINEARTRECORDER_H

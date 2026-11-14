@@ -226,6 +226,7 @@ bool KomaLineartRecorder::begin(const Target &target, const QPointF &documentPoi
     m_raw.clear();
     m_preview = QPainterPath();
     m_erased.clear();
+    m_erasedOutlines.clear();
     m_eraserTrail.clear();
     m_eraserMode = target.eraserMode;
 
@@ -299,6 +300,7 @@ void KomaLineartRecorder::collectErasedLines(const QPointF &documentPoint)
         const QPainterPath outline = line->absoluteTransformation().map(line->outline());
         if (outline.intersects(eraser)) {
             m_erased.insert(line);
+            m_erasedOutlines.append(outline);
             requestUpdate(outline.boundingRect());
         }
     }
@@ -348,6 +350,7 @@ void KomaLineartRecorder::finish()
     m_raw.clear();
     m_preview = QPainterPath();
     m_erased.clear();
+    m_erasedOutlines.clear();
     m_eraserTrail.clear();
     endBrushPreview();
     requestUpdate(dirty);
@@ -443,6 +446,7 @@ void KomaLineartRecorder::cancel()
     m_raw.clear();
     m_preview = QPainterPath();
     m_erased.clear();
+    m_erasedOutlines.clear();
     endBrushPreview();
     requestUpdate(dirty);
     m_image = nullptr;
@@ -454,8 +458,8 @@ QRectF KomaLineartRecorder::previewBounds() const
     if (!m_brushPreview.bounds().isEmpty()) {
         bounds |= pixelToDocument(m_brushPreview.bounds());
     }
-    for (KomaLineartShape *line : m_erased) {
-        bounds |= line->absoluteTransformation().map(line->outline()).boundingRect();
+    for (const QPainterPath &outline : m_erasedOutlines) {
+        bounds |= outline.boundingRect();
     }
     return bounds;
 }
@@ -486,11 +490,13 @@ void KomaLineartRecorder::paint(QPainter &painter, const KoViewConverter &conver
             // reaching into the area being repainted are drawn: a stroke can
             // mark dozens of lines, and each frame repaints a small part.
             const QRectF clip = painter.hasClipping() ? painter.clipBoundingRect() : QRectF();
-            for (KomaLineartShape *line : m_erased) {
-                if (!clip.isNull() && !toView.mapRect(line->boundingRect()).intersects(clip)) {
+            for (const QPainterPath &outline : m_erasedOutlines) {
+                // One view pixel of slack covers antialiased edge pixels.
+                if (!clip.isNull()
+                    && !toView.mapRect(outline.boundingRect()).adjusted(-1, -1, 1, 1).intersects(clip)) {
                     continue;
                 }
-                painter.drawPath(toView.map(line->absoluteTransformation().map(line->outline())));
+                painter.drawPath(toView.map(outline));
             }
         } else {
             // The eraser's path, which decides what is removed.
