@@ -198,26 +198,44 @@ void KisShapeLayerCanvas::setImage(KisImageWSP image)
     m_projection->setDefaultBounds(new KisDefaultBounds(image));
     if (image && m_hasUpdateOnSetImage) {
         m_hasUpdateOnSetImage = false;
-        /**
-         * KisImage::clone() sets the image of every node from inside the new
-         * image's constructor. Starting the update compressor here would run
-         * slotStartAsyncRepaint() synchronously (the compressor emits on its
-         * first start), and the strong reference that slot takes to the
-         * half-built image would destroy it. So only record the update as
-         * pending, which keeps forceUpdateTimedNode() working on the clone,
-         * and start the compressor once control is back in the event loop.
-         */
+        // Called from inside KisImage::clone() too; see requestAsyncRepaint().
         {
             QMutexLocker locker(&m_dirtyRegionMutex);
             m_dirtyRegion += kisGrowRect(m_cachedImageRect, 2);
         }
         m_hasUpdateInCompressor = true;
-        QMetaObject::invokeMethod(this, [this]() {
-            if (m_hasUpdateInCompressor && !m_isDestroying) {
-                m_asyncUpdateSignalCompressor.start();
-            }
-        }, Qt::QueuedConnection);
+        requestAsyncRepaint();
     }
+}
+
+void KisShapeLayerCanvas::requestAsyncRepaint()
+{
+    /**
+     * The update compressor is started from the event loop, once for all the
+     * updates requested while handling one event, rather than from inside
+     * the first update:
+     *
+     * - its first start emits at once, so started from updateCanvas() it
+     *   would begin a repaint from the middle of an edit, copying the shapes
+     *   before the edit is complete (a tool that updates a shape before and
+     *   after changing it would get the old shape repainted, then need a
+     *   second repaint for the new one);
+     * - KisImage::clone() sets the image of every node from inside the new
+     *   image's constructor, where a repaint would take a strong reference to
+     *   the half-built image and destroy it.
+     *
+     * The update stays pending meanwhile, so forceRepaint() still produces
+     * it at once.
+     */
+    if (m_asyncRepaintRequested.exchange(true)) {
+        return;
+    }
+    QMetaObject::invokeMethod(this, [this]() {
+        m_asyncRepaintRequested = false;
+        if (m_hasUpdateInCompressor && !m_isDestroying) {
+            m_asyncUpdateSignalCompressor.start();
+        }
+    }, Qt::QueuedConnection);
 }
 
 class KisRepaintShapeLayerLayerJob : public KisSpontaneousJob
@@ -280,11 +298,8 @@ void KisShapeLayerCanvas::updateCanvas(const QVector<QRectF> &region)
         }
     }
 
-    // Mark the update as pending before starting the compressor: in
-    // FIRST_ACTIVE mode the first start() runs slotStartAsyncRepaint()
-    // synchronously, and that slot is what clears the flag again.
     m_hasUpdateInCompressor = true;
-    m_asyncUpdateSignalCompressor.start();
+    requestAsyncRepaint();
 }
 
 

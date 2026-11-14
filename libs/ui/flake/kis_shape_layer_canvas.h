@@ -7,6 +7,7 @@
 #define KIS_SHAPE_LAYER_CANVAS_H
 
 #include <QMutex>
+#include <atomic>
 #include <QRegion>
 #include <KoCanvasBase.h>
 
@@ -111,11 +112,13 @@ private Q_SLOTS:
     void slotImageSizeChanged();
 
 private:
+    void requestAsyncRepaint();
     KisPaintDeviceSP m_projection;
     KisShapeLayer *m_parentLayer {0};
 
     KisThreadSafeSignalCompressor m_asyncUpdateSignalCompressor;
     volatile bool m_hasUpdateInCompressor = false;
+    std::atomic<bool> m_asyncRepaintRequested {false};
     bool m_hasUpdateOnSetImage = false;
     KisSafeBlockingQueueConnectionProxy<void> m_safeForcedConnection;
 
