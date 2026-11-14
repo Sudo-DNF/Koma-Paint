@@ -117,6 +117,18 @@ public:
      */
     static KisPaintOpPresetSP brushSnapshot(KisPaintOpPresetSP preset, const QColor &color);
 
+    /**
+     * Interactive rendering, for lines being reshaped by a drag. The line is
+     * rendered in pieces of a fixed number of samples, and a piece is
+     * rendered again only when its samples change, so an edit near one spot
+     * of a long line costs a fraction of a full render. Each piece starts
+     * the brush's dab spacing afresh and lies on the pixel grid, so the
+     * preview can differ from the final look by a fraction of a pixel; when
+     * interactive rendering ends the line is rendered whole again, exactly as
+     * before.
+     */
+    void setInteractive(bool interactive);
+
     // KoShape
     void setBackground(QSharedPointer<KoShapeBackground> background) override;
     void paint(QPainter &painter) const override;
@@ -190,6 +202,10 @@ private:
     /// Renders the line with its brush at @p scale device pixels per shape unit.
     QImage renderWithBrush(qreal scale, QRectF *localRect) const;
 
+    struct InteractivePieces;
+    /// Renders the line in pieces (see setInteractive()), reusing unchanged ones.
+    QVector<QPair<QRectF, QImage>> renderInteractive(qreal scale) const;
+
     QVector<KomaLineartPoint> m_centerline;
 
     KisPaintOpPresetSP m_brush;
@@ -204,6 +220,8 @@ private:
     };
     mutable QMutex m_cacheMutex;
     QSharedPointer<RenderCache> m_renderCache {new RenderCache};
+    /// Set while the line renders interactively; shared with its clones.
+    QSharedPointer<InteractivePieces> m_interactivePieces;
 };
 
 /**

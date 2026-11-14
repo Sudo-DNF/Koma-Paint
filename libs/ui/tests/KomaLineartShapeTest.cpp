@@ -685,3 +685,78 @@ void KomaLineartShapeTest::testBrushRenderContextReuse()
     QCOMPARE(render(shared, shortLine), freshShort);
     QCOMPARE(render(shared, longLine), freshLong);
 }
+
+void KomaLineartShapeTest::testInteractiveRendering()
+{
+    KisPaintOpPresetSP loaded(new KisPaintOpPreset(TestUtil::fetchDataFileLazy("autobrush_300px.kpp")));
+    QVERIFY(loaded->load(KisGlobalResourcesInterface::instance()));
+    const KisPaintOpPresetSP brush = KomaLineartShape::brushSnapshot(loaded, Qt::black);
+
+    QVector<KomaLineartPoint> centerline;
+    for (int i = 0; i <= 40; ++i) {
+        const qreal t = i / 40.0;
+        centerline.append({QPointF(20 + 600 * t, 120 + 50 * std::sin(t * 9)), 3 + 6 * std::sin(M_PI * t)});
+    }
+    auto paint = [](const KomaLineartShape &shape) {
+        QImage image(1400, 500, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        painter.scale(2, 2);
+        painter.setTransform(shape.absoluteTransformation(), true);
+        shape.paint(painter);
+        painter.end();
+        return image;
+    };
+    auto exactRender = [&](const QVector<KomaLineartPoint> &documentCenterline) {
+        KomaLineartShape shape;
+        shape.setLineColor(Qt::black);
+        shape.setCenterlineInDocument(documentCenterline);
+        shape.setBrush(brush, 9);
+        return paint(shape);
+    };
+
+    KomaLineartShape shape;
+    shape.setLineColor(Qt::black);
+    shape.setCenterlineInDocument(centerline);
+    shape.setBrush(brush, 9);
+    const QImage before = paint(shape);
+    QCOMPARE(before, exactRender(centerline));
+
+    // Starting interactive rendering keeps the exact render of an unchanged line.
+    shape.setInteractive(true);
+    QCOMPARE(paint(shape), before);
+
+    // Edits are shown from pieces; two edits near different spots of the line.
+    QVector<KomaLineartPoint> edited = shape.centerlineInDocument();
+    for (int step = 0; step < 2; ++step) {
+        edited = KomaLineartShape::adjustWidth(edited, edited[10 + 20 * step].position, 40, 1.5);
+        shape.setCenterlineFromDocument(edited);
+        const QImage interactive = paint(shape);
+        QVERIFY(interactive != before);
+        // The preview covers the line to within a pixel (its pieces lie on
+        // the pixel grid, the exact render at a sub-pixel offset): every
+        // strongly inked pixel of the exact render has ink next to it.
+        const QImage exact = exactRender(shape.centerlineInDocument());
+        int missing = 0;
+        for (int y = 1; y + 1 < exact.height(); ++y) {
+            for (int x = 1; x + 1 < exact.width(); ++x) {
+                if (qAlpha(exact.pixel(x, y)) <= 128) {
+                    continue;
+                }
+                bool inked = false;
+                for (int dy = -1; dy <= 1 && !inked; ++dy) {
+                    for (int dx = -1; dx <= 1 && !inked; ++dx) {
+                        inked = qAlpha(interactive.pixel(x + dx, y + dy)) > 0;
+                    }
+                }
+                missing += inked ? 0 : 1;
+            }
+        }
+        QCOMPARE(missing, 0);
+    }
+
+    // Ending interactive rendering renders the line whole again, exactly.
+    const QVector<KomaLineartPoint> finalCenterline = shape.centerlineInDocument();
+    shape.setInteractive(false);
+    QCOMPARE(paint(shape), exactRender(finalCenterline));
+}

@@ -60,6 +60,10 @@ QList<KomaLineartShape*> KomaLineartEditor::linesTouching(KisShapeLayer *layer, 
 
 void KomaLineartEditor::clear()
 {
+    // The edited lines are shown with their exact render again.
+    for (auto it = m_edits.begin(); it != m_edits.end(); ++it) {
+        it.key()->setInteractive(false);
+    }
     m_edits.clear();
     m_pointShape = nullptr;
     m_pointIndex = -1;
@@ -72,6 +76,10 @@ bool KomaLineartEditor::isEmpty() const
 
 KomaLineartEditor::Edit &KomaLineartEditor::startEdit(KomaLineartShape *line, qreal sampleSpacing)
 {
+    // While the drag lasts, the line is rendered in pieces (see
+    // KomaLineartShape::setInteractive()), so each edit re-renders only the
+    // part of it that changed.
+    line->setInteractive(true);
     Edit edit;
     edit.oldCenterline = line->centerline();
     edit.oldTransformation = line->transformation();

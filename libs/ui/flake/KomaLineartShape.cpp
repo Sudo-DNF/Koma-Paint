@@ -74,14 +74,29 @@ struct CachedLineartRender {
     QRectF rect;
     qreal scale;
     bool tiled {false};
+    /// An interactive render: pieces, each with its rect in shape units.
+    QVector<QPair<QRectF, QImage>> pieces;
 
     qint64 sizeInBytes() const
     {
+        if (!pieces.isEmpty()) {
+            qint64 size = 0;
+            for (const auto &piece : pieces) {
+                size += piece.second.sizeInBytes();
+            }
+            return size;
+        }
         return tiled ? tiles.sizeInBytes() : image.sizeInBytes();
     }
 
     void paint(QPainter &painter) const
     {
+        if (!pieces.isEmpty()) {
+            for (const auto &piece : pieces) {
+                painter.drawImage(piece.first, piece.second);
+            }
+            return;
+        }
         if (!tiled) {
             painter.drawImage(rect, image);
             return;
@@ -267,6 +282,72 @@ private:
     bool m_releaseRegistered {false};
 };
 
+/**
+ * A render context for @p brush at @p paintOpSize in @p color: an idle one
+ * from the pool with its device cleared, or a new one. Null if the brush
+ * cannot paint.
+ */
+std::unique_ptr<BrushRenderContext> acquireBrushContext(const KisPaintOpPresetSP &brush, qreal paintOpSize,
+                                                        const QColor &color, int width, int height)
+{
+    const KoColorSpace *colorSpace = KoColorSpaceRegistry::instance()->rgb8();
+    std::unique_ptr<BrushRenderContext> context =
+            BrushRenderContextPool::instance().take(brush, paintOpSize, color.rgba());
+    if (context) {
+        context->layer->paintDevice()->clear();
+        return context;
+    }
+    context.reset(new BrushRenderContext);
+    context->source = brush;
+    context->paintOpSize = paintOpSize;
+    context->color = color.rgba();
+    // The layer's paint device is unbounded; the image only gives the
+    // brush engine the image and node it expects.
+    context->image = new KisImage(nullptr, width, height, colorSpace, QStringLiteral("lineart"));
+    context->layer = new KisPaintLayer(context->image, QStringLiteral("lineart"), OPACITY_OPAQUE_U8, colorSpace);
+
+    KisPaintOpPresetSP preset;
+    {
+        // Lines drawn in one stroke share their brush snapshot, and lines
+        // are rendered from several threads when a vector layer repaints.
+        static QMutex cloneMutex;
+        QMutexLocker locker(&cloneMutex);
+        preset = brush->clone().dynamicCast<KisPaintOpPreset>();
+    }
+    if (!preset || !preset->settings()) {
+        return nullptr;
+    }
+    preset->settings()->setPaintOpSize(paintOpSize);
+
+    context->painter.reset(new KisPainter(context->layer->paintDevice()));
+    KisPainter &painter = *context->painter;
+    painter.setPaintColor(KoColor(color, colorSpace));
+    painter.setBackgroundColor(KoColor(Qt::white, colorSpace));
+    painter.setCompositeOpId(COMPOSITE_OVER);
+    painter.setOpacityF(preset->settings()->paintOpOpacity());
+    painter.setRunnableStrokeJobsInterface(&context->jobs);
+    painter.setPaintOpPreset(preset, context->layer, context->image);
+    if (!painter.paintOp()) {
+        return nullptr;
+    }
+    return context;
+}
+
+/// Brush engines may render their dabs asynchronously; runs the pending jobs until none are left.
+void finishBrushJobs(BrushRenderContext &context)
+{
+    for (int round = 0; round < 10000; ++round) {
+        QVector<KisRunnableStrokeJobData*> jobs;
+        bool needsMoreUpdates = false;
+        std::tie(std::ignore, needsMoreUpdates) = context.painter->paintOp()->doAsynchronousUpdate(jobs);
+        const bool noJobs = jobs.isEmpty();
+        context.jobs.addRunnableJobs(jobs);
+        if (noJobs && !needsMoreUpdates) {
+            break;
+        }
+    }
+}
+
 QPointF normalized(const QPointF &v)
 {
     const qreal length = qSqrt(v.x() * v.x() + v.y() * v.y());
@@ -359,6 +440,20 @@ void appendPainterPath(KoPathShape *shape, const QPainterPath &path)
 }
 }
 
+/// Samples per piece of an interactive render (about 64 px at 100%).
+static constexpr int interactivePieceSamples = 128;
+
+struct KomaLineartShape::InteractivePieces {
+    struct Piece {
+        QVector<KomaLineartPoint> samples;
+        qreal scale {0};
+        QRectF rect;
+        QImage image;
+    };
+    QMutex mutex;
+    QVector<Piece> pieces;
+};
+
 KomaLineartShape::RenderCache::RenderCache()
 {
     static std::atomic<quint64> nextId {0};
@@ -382,6 +477,7 @@ KomaLineartShape::KomaLineartShape(const KomaLineartShape &rhs)
 {
     QMutexLocker locker(&rhs.m_cacheMutex);
     m_renderCache = rhs.m_renderCache;
+    m_interactivePieces = rhs.m_interactivePieces;
 }
 
 KomaLineartShape::~KomaLineartShape()
@@ -422,6 +518,34 @@ void KomaLineartShape::setBrush(KisPaintOpPresetSP preset, qreal fullPressureWid
     m_fullPressureWidth = qMax(fullPressureWidth, minimumWidth);
     invalidateRender();
     update();
+}
+
+void KomaLineartShape::setInteractive(bool interactive)
+{
+    QSharedPointer<InteractivePieces> previous;
+    {
+        QMutexLocker locker(&m_cacheMutex);
+        if (bool(m_interactivePieces) == interactive) {
+            return;
+        }
+        previous = m_interactivePieces;
+        m_interactivePieces = interactive
+                ? QSharedPointer<InteractivePieces>(new InteractivePieces)
+                : QSharedPointer<InteractivePieces>();
+    }
+    // Starting keeps the current render: the line is rendered in pieces
+    // once it changes. Ending renders it whole again if pieces were shown.
+    if (!interactive) {
+        bool renderedInPieces = false;
+        {
+            QMutexLocker locker(&previous->mutex);
+            renderedInPieces = !previous->pieces.isEmpty();
+        }
+        if (renderedInPieces) {
+            invalidateRender();
+            update();
+        }
+    }
 }
 
 KisPaintOpPresetSP KomaLineartShape::brush() const
@@ -496,6 +620,21 @@ void KomaLineartShape::paint(QPainter &painter) const
                 haveRender = true;
             }
         }
+        bool interactive = false;
+        {
+            QMutexLocker interactiveLocker(&m_cacheMutex);
+            interactive = bool(m_interactivePieces);
+        }
+        if (!haveRender && interactive) {
+            render.pieces = renderInteractive(scale);
+            render.scale = scale;
+            haveRender = !render.pieces.isEmpty();
+            if (haveRender) {
+                const int cost = int(qMax<qint64>(1, (render.sizeInBytes() + 1023) / 1024));
+                QMutexLocker storeLocker(&store.mutex);
+                store.renders.insert(cache->id, new CachedLineartRender(render), cost);
+            }
+        }
         if (!haveRender) {
             QRectF rect;
             const QImage image = renderWithBrush(scale, &rect);
@@ -535,47 +674,12 @@ QImage KomaLineartShape::renderWithBrush(qreal scale, QRectF *localRect) const
     const int width = qMax(1, qCeil(bounds.width() * renderScale));
     const int height = qMax(1, qCeil(bounds.height() * renderScale));
 
-    const KoColorSpace *colorSpace = KoColorSpaceRegistry::instance()->rgb8();
     const qreal paintOpSize = m_fullPressureWidth * renderScale;
     const QColor color = lineColor();
     BrushRenderContextPool &pool = BrushRenderContextPool::instance();
-    std::unique_ptr<BrushRenderContext> context = pool.take(m_brush, paintOpSize, color.rgba());
-    if (context) {
-        context->layer->paintDevice()->clear();
-    } else {
-        context.reset(new BrushRenderContext);
-        context->source = m_brush;
-        context->paintOpSize = paintOpSize;
-        context->color = color.rgba();
-        // The layer's paint device is unbounded; the image only gives the
-        // brush engine the image and node it expects.
-        context->image = new KisImage(nullptr, width, height, colorSpace, QStringLiteral("lineart"));
-        context->layer = new KisPaintLayer(context->image, QStringLiteral("lineart"), OPACITY_OPAQUE_U8, colorSpace);
-
-        KisPaintOpPresetSP preset;
-        {
-            // Lines drawn in one stroke share their brush snapshot, and lines
-            // are rendered from several threads when a vector layer repaints.
-            static QMutex cloneMutex;
-            QMutexLocker locker(&cloneMutex);
-            preset = m_brush->clone().dynamicCast<KisPaintOpPreset>();
-        }
-        if (!preset || !preset->settings()) {
-            return QImage();
-        }
-        preset->settings()->setPaintOpSize(paintOpSize);
-
-        context->painter.reset(new KisPainter(context->layer->paintDevice()));
-        KisPainter &painter = *context->painter;
-        painter.setPaintColor(KoColor(color, colorSpace));
-        painter.setBackgroundColor(KoColor(Qt::white, colorSpace));
-        painter.setCompositeOpId(COMPOSITE_OVER);
-        painter.setOpacityF(preset->settings()->paintOpOpacity());
-        painter.setRunnableStrokeJobsInterface(&context->jobs);
-        painter.setPaintOpPreset(preset, context->layer, context->image);
-        if (!painter.paintOp()) {
-            return QImage();
-        }
+    std::unique_ptr<BrushRenderContext> context = acquireBrushContext(m_brush, paintOpSize, color, width, height);
+    if (!context) {
+        return QImage();
     }
     KisPainter &brushPainter = *context->painter;
     KisPaintDeviceSP device = context->layer->paintDevice();
@@ -594,23 +698,92 @@ QImage KomaLineartShape::renderWithBrush(qreal scale, QRectF *localRect) const
         brushPainter.paintLine(paintInfo(dense[i - 1]), paintInfo(dense[i]), &distance);
     }
 
-    // Brush engines may render their dabs asynchronously; run the pending
-    // jobs here until the engine has nothing left to do.
-    for (int round = 0; round < 10000; ++round) {
-        QVector<KisRunnableStrokeJobData*> jobs;
-        bool needsMoreUpdates = false;
-        std::tie(std::ignore, needsMoreUpdates) = brushPainter.paintOp()->doAsynchronousUpdate(jobs);
-        const bool noJobs = jobs.isEmpty();
-        context->jobs.addRunnableJobs(jobs);
-        if (noJobs && !needsMoreUpdates) {
-            break;
-        }
-    }
+    finishBrushJobs(*context);
 
     *localRect = QRectF(bounds.topLeft(), QSizeF(width, height) / renderScale);
     const QImage result = device->convertToQImage(nullptr, 0, 0, width, height);
     brushPainter.takeDirtyRegion();
     pool.giveBack(std::move(context));
+    return result;
+}
+
+QVector<QPair<QRectF, QImage>> KomaLineartShape::renderInteractive(qreal scale) const
+{
+    QVector<QPair<QRectF, QImage>> result;
+    QSharedPointer<InteractivePieces> pieces;
+    {
+        QMutexLocker locker(&m_cacheMutex);
+        pieces = m_interactivePieces;
+    }
+    if (!pieces) {
+        return result;
+    }
+
+    // The same samples a full render paints; pieces split them.
+    const QVector<KomaLineartPoint> dense = densify(m_centerline, qMax(0.5 / scale, minimumWidth));
+    if (dense.isEmpty()) {
+        return result;
+    }
+    const qreal margin = m_fullPressureWidth * 0.75 + 2.0 / scale;
+    const qreal paintOpSize = m_fullPressureWidth * scale;
+    const QColor color = lineColor();
+    auto paintInfo = [&](const KomaLineartPoint &point, const QPoint &origin) {
+        const qreal share = point.width / m_fullPressureWidth;
+        const qreal pressure = qBound(0.0, (share - minimumPressureShare) / (1.0 - minimumPressureShare), 1.0);
+        return KisPaintInformation(point.position * scale - origin, pressure);
+    };
+
+    QMutexLocker locker(&pieces->mutex);
+    const int count = qMax(1, (dense.size() - 1 + interactivePieceSamples - 1) / interactivePieceSamples);
+    pieces->pieces.resize(count);
+    result.reserve(count);
+    std::unique_ptr<BrushRenderContext> context;
+    for (int k = 0; k < count; ++k) {
+        const int first = k * interactivePieceSamples;
+        const int last = qMin(first + interactivePieceSamples, int(dense.size()) - 1);
+        // Consecutive pieces share their boundary sample.
+        const QVector<KomaLineartPoint> samples = dense.mid(first, last - first + 1);
+        InteractivePieces::Piece &piece = pieces->pieces[k];
+        if (piece.scale == scale && piece.samples == samples && !piece.image.isNull()) {
+            result.append({piece.rect, piece.image});
+            continue;
+        }
+
+        // Pieces lie on the pixel grid, so unchanged ones fit wherever the line's bounds move.
+        QRectF sampleBounds(samples.first().position, QSizeF());
+        for (const KomaLineartPoint &sample : samples) {
+            sampleBounds |= QRectF(sample.position, QSizeF());
+        }
+        sampleBounds.adjust(-margin, -margin, margin, margin);
+        const QRect pixelRect = QRectF(sampleBounds.topLeft() * scale, sampleBounds.bottomRight() * scale).toAlignedRect();
+        if (!context) {
+            context = acquireBrushContext(m_brush, paintOpSize, color, pixelRect.width(), pixelRect.height());
+            if (!context) {
+                return {};
+            }
+        } else {
+            context->layer->paintDevice()->clear();
+        }
+
+        KisPainter &brushPainter = *context->painter;
+        KisDistanceInformation distance;
+        brushPainter.paintAt(paintInfo(samples.first(), pixelRect.topLeft()), &distance);
+        for (int i = 1; i < samples.size(); ++i) {
+            brushPainter.paintLine(paintInfo(samples[i - 1], pixelRect.topLeft()),
+                                   paintInfo(samples[i], pixelRect.topLeft()), &distance);
+        }
+        finishBrushJobs(*context);
+        brushPainter.takeDirtyRegion();
+
+        piece.samples = samples;
+        piece.scale = scale;
+        piece.rect = QRectF(QPointF(pixelRect.topLeft()) / scale, QSizeF(pixelRect.size()) / scale);
+        piece.image = context->layer->paintDevice()->convertToQImage(nullptr, 0, 0, pixelRect.width(), pixelRect.height());
+        result.append({piece.rect, piece.image});
+    }
+    if (context) {
+        BrushRenderContextPool::instance().giveBack(std::move(context));
+    }
     return result;
 }
 

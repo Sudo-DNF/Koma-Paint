@@ -32,6 +32,7 @@ private Q_SLOTS:
     void testEraserOverlayFill();
     void testBrushRenderContextReuse_data();
     void testBrushRenderContextReuse();
+    void testInteractiveRendering();
 };
 
 #endif // KOMALINEARTSHAPETEST_H
