@@ -422,7 +422,6 @@ void KomaLineartShapeTest::testImmediateProjectionUndoRedo()
     };
 
     command.redo();
-    QVERIFY(layer->hasPendingTimedUpdates());
     layer->forceUpdateTimedNode();
     const QRgb first = pixel();
     QVERIFY(qAlpha(first) > 0);

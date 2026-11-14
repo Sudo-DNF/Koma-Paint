@@ -263,8 +263,11 @@ void KisShapeLayerCanvas::updateCanvas(const QVector<QRectF> &region)
         }
     }
 
-    m_asyncUpdateSignalCompressor.start();
+    // Mark the update as pending before starting the compressor: in
+    // FIRST_ACTIVE mode the first start() runs slotStartAsyncRepaint()
+    // synchronously, and that slot is what clears the flag again.
     m_hasUpdateInCompressor = true;
+    m_asyncUpdateSignalCompressor.start();
 }
 
 
@@ -315,6 +318,8 @@ void KisShapeLayerCanvas::slotStartAsyncRepaint()
 
     if (!forceUpdateHiddenAreasOnly) {
         if (repaintRect.isEmpty()) {
+            // Nothing is left to repaint, so no update is pending any more.
+            m_hasUpdateInCompressor = false;
             return;
         }
 
