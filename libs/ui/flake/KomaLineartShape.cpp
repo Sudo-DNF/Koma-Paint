@@ -208,6 +208,18 @@ private:
     }
 };
 
+/**
+ * The thread pool interactive pieces render on. Lines are rendered from the
+ * global pool's threads and their brush jobs run on the executor's pool, so
+ * pieces need a third pool: tasks waiting on a pool they occupy would never
+ * finish.
+ */
+QThreadPool &piecePool()
+{
+    static QThreadPool pool;
+    return pool;
+}
+
 struct BrushRenderContext {
     KisPaintOpPresetSP source;   ///< The snapshot the context paints with.
     qreal paintOpSize {0};
@@ -736,19 +748,23 @@ QVector<QPair<QRectF, QImage>> KomaLineartShape::renderInteractive(qreal scale) 
     QMutexLocker locker(&pieces->mutex);
     const int count = qMax(1, (dense.size() - 1 + interactivePieceSamples - 1) / interactivePieceSamples);
     pieces->pieces.resize(count);
-    result.reserve(count);
-    std::unique_ptr<BrushRenderContext> context;
+
+    // The pieces whose samples changed since they were last rendered.
+    struct PieceJob {
+        int index;
+        QVector<KomaLineartPoint> samples;
+        QRect pixelRect;
+    };
+    QVector<PieceJob> stale;
     for (int k = 0; k < count; ++k) {
         const int first = k * interactivePieceSamples;
         const int last = qMin(first + interactivePieceSamples, int(dense.size()) - 1);
         // Consecutive pieces share their boundary sample.
-        const QVector<KomaLineartPoint> samples = dense.mid(first, last - first + 1);
-        InteractivePieces::Piece &piece = pieces->pieces[k];
+        QVector<KomaLineartPoint> samples = dense.mid(first, last - first + 1);
+        const InteractivePieces::Piece &piece = pieces->pieces[k];
         if (piece.scale == scale && piece.samples == samples && !piece.image.isNull()) {
-            result.append({piece.rect, piece.image});
             continue;
         }
-
         // Pieces lie on the pixel grid, so unchanged ones fit wherever the line's bounds move.
         QRectF sampleBounds(samples.first().position, QSizeF());
         for (const KomaLineartPoint &sample : samples) {
@@ -756,33 +772,49 @@ QVector<QPair<QRectF, QImage>> KomaLineartShape::renderInteractive(qreal scale) 
         }
         sampleBounds.adjust(-margin, -margin, margin, margin);
         const QRect pixelRect = QRectF(sampleBounds.topLeft() * scale, sampleBounds.bottomRight() * scale).toAlignedRect();
-        if (!context) {
-            context = acquireBrushContext(m_brush, paintOpSize, color, pixelRect.width(), pixelRect.height());
-            if (!context) {
-                return {};
-            }
-        } else {
-            context->layer->paintDevice()->clear();
-        }
+        stale.append({k, std::move(samples), pixelRect});
+    }
 
+    // Each piece is painted on its own, so pieces render in parallel: a line
+    // that starts being edited has all of its pieces rendered at once.
+    std::atomic<bool> failed {false};
+    auto renderPiece = [&](const PieceJob &job) {
+        std::unique_ptr<BrushRenderContext> context =
+                acquireBrushContext(m_brush, paintOpSize, color, job.pixelRect.width(), job.pixelRect.height());
+        if (!context) {
+            failed = true;
+            return;
+        }
         KisPainter &brushPainter = *context->painter;
         KisDistanceInformation distance;
-        brushPainter.paintAt(paintInfo(samples.first(), pixelRect.topLeft()), &distance);
-        for (int i = 1; i < samples.size(); ++i) {
-            brushPainter.paintLine(paintInfo(samples[i - 1], pixelRect.topLeft()),
-                                   paintInfo(samples[i], pixelRect.topLeft()), &distance);
+        brushPainter.paintAt(paintInfo(job.samples.first(), job.pixelRect.topLeft()), &distance);
+        for (int i = 1; i < job.samples.size(); ++i) {
+            brushPainter.paintLine(paintInfo(job.samples[i - 1], job.pixelRect.topLeft()),
+                                   paintInfo(job.samples[i], job.pixelRect.topLeft()), &distance);
         }
         finishBrushJobs(*context);
         brushPainter.takeDirtyRegion();
 
-        piece.samples = samples;
+        InteractivePieces::Piece &piece = pieces->pieces[job.index];
+        piece.samples = job.samples;
         piece.scale = scale;
-        piece.rect = QRectF(QPointF(pixelRect.topLeft()) / scale, QSizeF(pixelRect.size()) / scale);
-        piece.image = context->layer->paintDevice()->convertToQImage(nullptr, 0, 0, pixelRect.width(), pixelRect.height());
-        result.append({piece.rect, piece.image});
-    }
-    if (context) {
+        piece.rect = QRectF(QPointF(job.pixelRect.topLeft()) / scale, QSizeF(job.pixelRect.size()) / scale);
+        piece.image = context->layer->paintDevice()->convertToQImage(nullptr, 0, 0,
+                                                                     job.pixelRect.width(), job.pixelRect.height());
         BrushRenderContextPool::instance().giveBack(std::move(context));
+    };
+    if (stale.size() == 1) {
+        renderPiece(stale.first());
+    } else if (!stale.isEmpty()) {
+        QtConcurrent::blockingMap(&piecePool(), stale, renderPiece);
+    }
+    if (failed) {
+        return result;
+    }
+
+    result.reserve(count);
+    for (const InteractivePieces::Piece &piece : std::as_const(pieces->pieces)) {
+        result.append({piece.rect, piece.image});
     }
     return result;
 }
