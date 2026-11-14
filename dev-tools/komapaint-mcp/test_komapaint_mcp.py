@@ -9,6 +9,7 @@ launches an installed Koma Paint headless and drives it through the server.
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -220,6 +221,71 @@ class EndToEndTest(unittest.TestCase):
 
         logs, _ = call("app_logs", {"grep": "koma_mcp"})
         self.assertTrue(any("bridge listening" in line["text"] for line in logs["lines"]))
+
+    def test_exports_leave_out_draft_layers(self):
+        call = self.client.call
+        top, bottom = [0, 0, 400, 200], [0, 200, 400, 200]
+        info, _ = call("doc_new", {"width": 400, "height": 400, "name": "Drafts"})
+        document = info["name"]
+        # Hide the white Paper layer so that exported pixels are only the strokes.
+        paper = [layer for layer in info["layers"] if layer["name"] == "Paper"]
+        for layer in paper:
+            call("layer_set", {"node": layer["id"], "properties": {"visible": False}})
+
+        call("layer_add", {"name": "Ink"})
+        call("paint_stroke", {"points": [[50, 100, 1.0], [350, 100, 1.0]]})
+        call("layer_add", {"name": "Sketch"})
+        call("paint_stroke", {"points": [[50, 300, 1.0], [350, 300, 1.0]]})
+
+        # The Layers panel's quick toggle marks the active layer as a draft.
+        toggle, _ = call("ui_find", {"class": "QToolButton", "text": "Set as draft layer"})
+        self.assertEqual(len(toggle["matches"]), 1)
+        call("ui_click", {"widget": toggle["matches"][0]["id"]})
+        toggle, _ = call("ui_find", {"class": "QToolButton", "text": "Set as draft layer"})
+        self.assertTrue(toggle["matches"][0]["checked"])
+        on_canvas, _ = call("pixel_stats", {"rect": bottom})
+        self.assertGreater(on_canvas["non_transparent"], 0)
+
+        directory = tempfile.mkdtemp(prefix="koma-mcp-draft-")
+        try:
+            def draft_and_ink(path):
+                """Opaque pixels of the Ink (top) and Sketch (bottom) strokes in a saved file."""
+                if path.endswith(".png"):
+                    # Read the file itself: a document saved as this path is still open.
+                    result, _ = call("python_exec", {"code": (
+                        "from PyQt6.QtGui import QImage\n"
+                        "image = QImage(%r)\n"
+                        "[sum(image.pixelColor(x, y).alpha() > 0 for x in range(400) for y in rows)\n"
+                        " for rows in (range(0, 200), range(200, 400))]") % path})
+                    ink, draft = json.loads(result["value"])
+                else:
+                    call("doc_open", {"path": path})
+                    ink = call("pixel_stats", {"document": path, "rect": top})[0]["non_transparent"]
+                    draft = call("pixel_stats", {"document": path, "rect": bottom})[0]["non_transparent"]
+                    call("doc_close", {"document": path, "discard": True})
+                self.assertGreater(ink, 0, path)
+                return draft
+
+            # Scripted exports (Document.exportImage) leave the draft out...
+            png = os.path.join(directory, "export.png")
+            call("doc_export", {"document": document, "path": png})
+            after, _ = call("pixel_stats", {"document": document, "rect": bottom})
+            # ...without touching the open document...
+            self.assertEqual(after["non_transparent"], on_canvas["non_transparent"])
+            self.assertEqual(draft_and_ink(png), 0)
+
+            # ...and a .kra keeps it.
+            kra = os.path.join(directory, "export.kra")
+            call("doc_export", {"document": document, "path": kra})
+            self.assertGreater(draft_and_ink(kra), 0)
+
+            # Saving as PNG goes through the background saving path, which leaves it out too.
+            saved = os.path.join(directory, "saved.png")
+            call("doc_save", {"document": document, "path": saved})
+            self.assertEqual(draft_and_ink(saved), 0)
+        finally:
+            shutil.rmtree(directory, ignore_errors=True)
+        call("doc_close", {"document": document, "discard": True})
 
 
 if __name__ == "__main__":

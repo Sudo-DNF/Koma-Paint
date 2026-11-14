@@ -148,6 +148,47 @@ using namespace std;
 namespace {
 constexpr int errorMessageTimeout = 5000;
 constexpr int successMessageTimeout = 1000;
+
+/**
+ * Draft layers stay in Krita documents but are left out of exports.
+ */
+bool exportKeepsDraftLayers(const QByteArray &mimeType)
+{
+    return mimeType == KisDocument::nativeFormatMimeType()
+            || mimeType == QByteArrayLiteral("application/x-krita-archive");
+}
+
+bool isVisibleDraftLayer(KisNodeSP node)
+{
+    const KisLayer *layer = qobject_cast<const KisLayer*>(node.data());
+    return layer && layer->isDraft() && layer->visible();
+}
+
+bool hasVisibleDraftLayers(KisImageSP image)
+{
+    return image && KisLayerUtils::recursiveFindNode(image->root(), isVisibleDraftLayer);
+}
+
+/**
+ * Hides the visible draft layers of \p image. Only ever call it on an
+ * image cloned for saving: the change is not undoable. Returns true if
+ * a layer was hidden, the caller then has to wait for the image to
+ * regenerate its projection.
+ */
+bool hideDraftLayersForExport(KisImageSP image)
+{
+    bool hidDraftLayers = false;
+    KisLayerUtils::recursiveApplyNodes(image->root(), [&hidDraftLayers](KisNodeSP node) {
+        if (isVisibleDraftLayer(node)) {
+            node->setVisible(false);
+            hidDraftLayers = true;
+        }
+    });
+    if (hidDraftLayers) {
+        image->refreshGraphAsync();
+    }
+    return hidDraftLayers;
+}
 }
 
 
@@ -1338,6 +1379,30 @@ void KisDocument::copyFromDocumentImpl(const KisDocument &rhs, CopyPolicy policy
 
 bool KisDocument::exportDocumentSync(const QString &path, const QByteArray &mimeType, KisPropertiesConfigurationSP exportConfiguration)
 {
+    if (!exportKeepsDraftLayers(mimeType) && hasVisibleDraftLayers(d->image)) {
+        /**
+         * Draft layers are hidden on a clone, so that the document
+         * itself (often one open in a view, when called from a script)
+         * stays untouched.
+         */
+        QScopedPointer<KisDocument> exportDocument(lockAndCloneForSaving());
+        if (!exportDocument) {
+            return false;
+        }
+        exportDocument->setFileBatchMode(fileBatchMode());
+        hideDraftLayersForExport(exportDocument->image());
+        exportDocument->image()->waitForDone();
+
+        const bool result = exportDocument->exportDocumentSync(path, mimeType, exportConfiguration);
+        if (!exportDocument->errorMessage().isEmpty()) {
+            setErrorMessage(exportDocument->errorMessage());
+        }
+        if (!exportDocument->warningMessage().isEmpty()) {
+            setWarningMessage(exportDocument->warningMessage());
+        }
+        return result;
+    }
+
     {
         /**
          * The caller guarantees that no one else uses the document (usually,
@@ -1424,22 +1489,9 @@ KritaUtils::BackgroudSavingStartResult KisDocument::initiateSavingInBackground(c
         waitForImage(clonedDocument->image());
     }
 
-    // Draft layers stay in Krita documents but are left out of exports.
-    const bool keepsDraftLayers = job.mimeType == nativeFormatMimeType()
-            || job.mimeType == QByteArrayLiteral("application/x-krita-archive");
-    if (!keepsDraftLayers) {
-        bool hidDraftLayers = false;
-        KisLayerUtils::recursiveApplyNodes(clonedDocument->image()->root(), [&hidDraftLayers](KisNodeSP node) {
-            KisLayer *layer = qobject_cast<KisLayer*>(node.data());
-            if (layer && layer->isDraft() && layer->visible()) {
-                layer->setVisible(false);
-                hidDraftLayers = true;
-            }
-        });
-        if (hidDraftLayers) {
-            clonedDocument->image()->refreshGraphAsync();
-            waitForImage(clonedDocument->image());
-        }
+    if (!exportKeepsDraftLayers(job.mimeType)
+            && hideDraftLayersForExport(clonedDocument->image())) {
+        waitForImage(clonedDocument->image());
     }
 
     KisConfig cfg(true);
