@@ -72,8 +72,9 @@ public:
     /**
      * One Adjust Line Width step: touches the lines under the brush and
      * scales their width around @p point by @p factor.
+     * @return true if a line changed, false if none lies under the brush.
      */
-    void adjustWidth(KisShapeLayer *layer, const QPointF &point, qreal radius, qreal factor);
+    bool adjustWidth(KisShapeLayer *layer, const QPointF &point, qreal radius, qreal factor);
 
     /// Drops the extra samples adjustWidth() worked with.
     void finishAdjustWidth(qreal tolerance);

@@ -708,19 +708,22 @@ private:
 /**
  * Measures @p count edits made as during a drag, in three ways:
  *
- * - a continuous drag at 120 Hz: the time each edit takes, and the
- *   intervals between the updates the layer's projection receives (its
- *   frame rate while the user drags);
+ * - a continuous drag at 120 Hz: the time each edit takes; the intervals
+ *   between the updates the layer's projection receives (its frame rate
+ *   while the user drags, including stretches where no edit changed
+ *   anything); and how long the oldest change not shown yet waits for the
+ *   update that shows it;
  * - single edits: the time until the projection shows one edit;
  * - the repaint alone: the cost of repainting the layer's dirty region after
  *   one edit, and the share of the layer one edit marks dirty.
  */
-void measureLayerEdits(const char *name, DenseLineart &dense, int count, const std::function<void(int)> &edit)
+void measureLayerEdits(const char *name, DenseLineart &dense, int count, const std::function<bool(int)> &edit)
 {
     constexpr qint64 cadence = 8333333; // 120 Hz
     KisImageSP image = dense.parent->image;
     QVector<qint64> eventTimes;
     QVector<qint64> frameIntervals;
+    QVector<qint64> frameWaits;
     QVector<qint64> latencies;
     QVector<qint64> repaintTimes;
     qint64 largestUpdate = 0;
@@ -729,13 +732,17 @@ void measureLayerEdits(const char *name, DenseLineart &dense, int count, const s
         ImageUpdateArea updates(image);
         QElapsedTimer clock;
         clock.start();
+        QVector<qint64> changes; // Steady-clock times of the edits that changed the layer.
         for (int i = 0; i < count; ++i, ++next) {
             while (clock.nsecsElapsed() < i * cadence) {
                 QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
             }
             const qint64 start = clock.nsecsElapsed();
-            edit(next);
+            const bool changed = edit(next);
             eventTimes.append(clock.nsecsElapsed() - start);
+            if (changed) {
+                changes.append(std::chrono::steady_clock::now().time_since_epoch().count());
+            }
         }
         const qint64 dragEnd = std::chrono::steady_clock::now().time_since_epoch().count();
         while (dense.layer->hasPendingTimedUpdates()) {
@@ -752,6 +759,17 @@ void measureLayerEdits(const char *name, DenseLineart &dense, int count, const s
         }
         for (int i = 1; i < frames.size(); ++i) {
             frameIntervals.append(frames[i] - frames[i - 1]);
+        }
+        // An edit that changed nothing (the brush between lines) needs no
+        // frame: only the time a change waits to be shown counts.
+        int change = 0;
+        for (int i = 0; i < frames.size(); ++i) {
+            while (change < changes.size() && changes[change] <= (i > 0 ? frames[i - 1] : 0)) {
+                ++change;
+            }
+            if (change < changes.size() && changes[change] < frames[i]) {
+                frameWaits.append(frames[i] - changes[change]);
+            }
         }
     }
     dense.settle();
@@ -793,6 +811,7 @@ void measureLayerEdits(const char *name, DenseLineart &dense, int count, const s
     QByteArray label(name);
     printPercentiles(QByteArray(label + ": per input event").constData(), eventTimes);
     printPercentiles(QByteArray(label + ": projection update interval during a 120 Hz drag").constData(), frameIntervals);
+    printPercentiles(QByteArray(label + ": oldest change to projection updated during a 120 Hz drag").constData(), frameWaits);
     printPercentiles(QByteArray(label + ": single edit to projection updated").constData(), latencies);
     printPercentiles(QByteArray(label + ": dirty-region layer repaint").constData(), repaintTimes);
     std::printf("%s: largest projection update after one edit %.1f%% of the layer\n",
@@ -909,6 +928,7 @@ void KomaLineartBenchmark::denseControlPointDrag()
     measureLayerEdits("Control point drag over 220 lines", dense, 240, [&](int i) {
         const qreal angle = i / 20.0;
         editor.movePickedPoint(grab + QPointF(60 * std::sin(angle), 40 * (1 - std::cos(angle))) / denseResolution);
+        return true;
     });
 }
 
@@ -924,7 +944,7 @@ void KomaLineartBenchmark::denseAdjustWidth()
         const int phase = i % 480;
         const qreal t = (phase < 240 ? phase : 479 - phase) / 240.0;
         const QPointF point = QPointF(1500 + 400 * t, 300 + 800 * t + 30 * std::sin(i / 7.0)) / denseResolution;
-        editor.adjustWidth(dense.layer.data(), point, radius, factor);
+        return editor.adjustWidth(dense.layer.data(), point, radius, factor);
     });
 }
 

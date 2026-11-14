@@ -155,10 +155,11 @@ void KomaLineartEditor::touchLines(KisShapeLayer *layer, const QPointF &point, q
     }
 }
 
-void KomaLineartEditor::adjustWidth(KisShapeLayer *layer, const QPointF &point, qreal radius, qreal factor)
+bool KomaLineartEditor::adjustWidth(KisShapeLayer *layer, const QPointF &point, qreal radius, qreal factor)
 {
     touchLines(layer, point, radius, radius / 4.0);
     const qreal radiusSquared = radius * radius;
+    bool changed = false;
     for (auto it = m_edits.begin(); it != m_edits.end(); ++it) {
         const bool affectsLine = std::any_of(it->working.cbegin(), it->working.cend(),
                                               [&](const KomaLineartPoint &sample) {
@@ -170,7 +171,9 @@ void KomaLineartEditor::adjustWidth(KisShapeLayer *layer, const QPointF &point, 
         }
         it->working = KomaLineartShape::adjustWidth(it->working, point, radius, factor);
         it.key()->setCenterlineFromDocument(it->working);
+        changed = true;
     }
+    return changed;
 }
 
 void KomaLineartEditor::finishAdjustWidth(qreal tolerance)
