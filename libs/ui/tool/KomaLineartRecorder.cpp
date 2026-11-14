@@ -227,6 +227,8 @@ bool KomaLineartRecorder::begin(const Target &target, const QPointF &documentPoi
     m_preview = QPainterPath();
     m_erased.clear();
     m_erasedOutlines.clear();
+    m_erasedOverlay = QImage();
+    m_erasedOverlayCount = 0;
     m_eraserTrail.clear();
     m_eraserMode = target.eraserMode;
 
@@ -351,6 +353,8 @@ void KomaLineartRecorder::finish()
     m_preview = QPainterPath();
     m_erased.clear();
     m_erasedOutlines.clear();
+    m_erasedOverlay = QImage();
+    m_erasedOverlayCount = 0;
     m_eraserTrail.clear();
     endBrushPreview();
     requestUpdate(dirty);
@@ -447,6 +451,8 @@ void KomaLineartRecorder::cancel()
     m_preview = QPainterPath();
     m_erased.clear();
     m_erasedOutlines.clear();
+    m_erasedOverlay = QImage();
+    m_erasedOverlayCount = 0;
     endBrushPreview();
     requestUpdate(dirty);
     m_image = nullptr;
@@ -472,6 +478,37 @@ void KomaLineartRecorder::requestUpdate(const QRectF &documentRect)
     }
 }
 
+void KomaLineartRecorder::updateErasedOverlay(const QPainter &painter, const QTransform &toView) const
+{
+    if (m_erasedOutlines.isEmpty()) {
+        return;
+    }
+    const QPaintDevice *device = painter.device();
+    const qreal ratio = device->devicePixelRatioF();
+    const QSize size = (QSizeF(device->width(), device->height()) * ratio).toSize();
+    const QTransform combined = painter.combinedTransform();
+    const QTransform transform = toView * combined;
+    if (m_erasedOverlay.isNull() || m_erasedOverlay.size() != size
+        || !qFuzzyCompare(m_erasedOverlay.devicePixelRatio(), ratio) || m_erasedOverlayTransform != transform) {
+        m_erasedOverlay = QImage(size, QImage::Format_ARGB32_Premultiplied);
+        m_erasedOverlay.setDevicePixelRatio(ratio);
+        m_erasedOverlay.fill(Qt::transparent);
+        m_erasedOverlayTransform = transform;
+        m_erasedOverlayCount = 0;
+    }
+    if (m_erasedOverlayCount == m_erasedOutlines.size()) {
+        return;
+    }
+    QPainter overlay(&m_erasedOverlay);
+    overlay.setRenderHint(QPainter::Antialiasing);
+    overlay.setPen(Qt::NoPen);
+    overlay.setBrush(QColor(128, 128, 128, 160));
+    overlay.setTransform(combined);
+    for (; m_erasedOverlayCount < m_erasedOutlines.size(); ++m_erasedOverlayCount) {
+        overlay.drawPath(toView.map(m_erasedOutlines[m_erasedOverlayCount]));
+    }
+}
+
 void KomaLineartRecorder::paint(QPainter &painter, const KoViewConverter &converter) const
 {
     if (!m_active) {
@@ -486,17 +523,23 @@ void KomaLineartRecorder::paint(QPainter &painter, const KoViewConverter &conver
         painter.setPen(Qt::NoPen);
         painter.setBrush(QColor(128, 128, 128, 160));
         if (m_eraserMode == EraserMode::WholeLine) {
-            // Lines that will be erased are drawn in a muted grey. Only those
-            // reaching into the area being repainted are drawn: a stroke can
-            // mark dozens of lines, and each frame repaints a small part.
-            const QRectF clip = painter.hasClipping() ? painter.clipBoundingRect() : QRectF();
-            for (const QPainterPath &outline : m_erasedOutlines) {
-                // One view pixel of slack covers antialiased edge pixels.
-                if (!clip.isNull()
-                    && !toView.mapRect(outline.boundingRect()).adjusted(-1, -1, 1, 1).intersects(clip)) {
-                    continue;
+            // Lines that will be erased are drawn in a muted grey. A stroke
+            // can mark dozens of long lines and each frame repaints a part of
+            // them, so they are drawn once into a device-pixel image and a
+            // frame copies the area it repaints.
+            updateErasedOverlay(painter, toView);
+            if (!m_erasedOverlay.isNull()) {
+                const qreal ratio = m_erasedOverlay.devicePixelRatio();
+                painter.resetTransform();
+                QRect source = m_erasedOverlay.rect();
+                if (painter.hasClipping()) {
+                    const QRectF clip = painter.clipBoundingRect();
+                    source &= QRectF(clip.topLeft() * ratio, clip.size() * ratio).toAlignedRect();
                 }
-                painter.drawPath(toView.map(outline));
+                if (!source.isEmpty()) {
+                    painter.drawImage(QRectF(QPointF(source.topLeft()) / ratio, QSizeF(source.size()) / ratio),
+                                      m_erasedOverlay, source);
+                }
             }
         } else {
             // The eraser's path, which decides what is removed.

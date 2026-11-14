@@ -7,10 +7,12 @@
 #define KOMALINEARTRECORDER_H
 
 #include <QColor>
+#include <QImage>
 #include <QPainterPath>
 #include <QScopedPointer>
 #include <QPointer>
 #include <QSet>
+#include <QTransform>
 #include <QVector>
 
 #include <functional>
@@ -151,6 +153,16 @@ private:
     /// The document-space outlines of m_erased, taken when each was marked;
     /// a marked line does not change while the eraser stroke lasts.
     QVector<QPainterPath> m_erasedOutlines;
+
+    /// Draws the marked lines not drawn yet into m_erasedOverlay, rebuilding
+    /// it when the view or the paint device has changed.
+    void updateErasedOverlay(const QPainter &painter, const QTransform &toView) const;
+
+    /// The whole-line eraser's grey marks in device pixels, so that a frame
+    /// copies the area it repaints instead of filling every marked line again.
+    mutable QImage m_erasedOverlay;
+    mutable QTransform m_erasedOverlayTransform;  ///< Document to the painter's logical coordinates.
+    mutable int m_erasedOverlayCount {0};         ///< How many of m_erasedOutlines it holds.
 };
 
 #endif // KOMALINEARTRECORDER_H
