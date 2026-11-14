@@ -148,7 +148,7 @@
 #include <KisImageConfigNotifier.h>
 #include "KisWindowLayoutManager.h"
 #include <KisUndoActionsUpdateManager.h>
-#include "KisWelcomePageWidget.h"
+#include "KomaStudioHome.h"
 #include "KisRecentDocumentsModelWrapper.h"
 #include <KritaVersionWrapper.h>
 #include "KisCanvasWindow.h"
@@ -200,7 +200,7 @@ public:
         , windowMenu(new KActionMenu(i18nc("@action:inmenu", "&Window"), parent))
         , documentMenu(new KActionMenu(i18nc("@action:inmenu", "New &View"), parent))
         , workspaceMenu(new KActionMenu(i18nc("@action:inmenu", "Wor&kspace"), parent))
-        , welcomePage(new KisWelcomePageWidget(parent))
+        , welcomePage(new KomaStudioHome(parent))
         , widgetStack(new QStackedWidget(parent))
         , mdiArea(new QMdiArea(parent))
         , windowMapper(new KisSignalMapper(parent))
@@ -208,13 +208,8 @@ public:
     {
         if (id.isNull()) this->id = QUuid::createUuid();
 
-        welcomeScroller = new QScrollArea();
-        welcomeScroller->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-        welcomeScroller->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-        welcomeScroller->setWidget(welcomePage);
-        welcomeScroller->setWidgetResizable(true);
-
-        widgetStack->addWidget(welcomeScroller);
+        // Studio Home lays out and scrolls its own file grid.
+        widgetStack->addWidget(welcomePage);
         widgetStack->addWidget(mdiArea);
         mdiArea->setTabsMovable(true);
         mdiArea->setActivationOrder(QMdiArea::ActivationHistoryOrder);
@@ -309,8 +304,7 @@ public:
 #ifndef Q_OS_HAIKU
     Digikam::ThemeManager *themeManager {nullptr};
 #endif
-    QScrollArea *welcomeScroller {nullptr};
-    KisWelcomePageWidget *welcomePage {nullptr};
+    KomaStudioHome *welcomePage {nullptr};
 
 
     QStackedWidget *widgetStack {nullptr};
@@ -1118,7 +1112,7 @@ KisView *KisMainWindow::activeView() const
 
 bool KisMainWindow::openDocument(const QString &path, OpenFlags flags)
 {
-    ScopedWidgetDisabler disabler(d->welcomePage->dropFrameBorder);
+    ScopedWidgetDisabler disabler(d->welcomePage);
     QApplication::processEvents(); // make UI more responsive
 
     if (!QFile(path).exists()) {

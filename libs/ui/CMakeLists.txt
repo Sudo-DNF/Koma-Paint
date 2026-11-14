@@ -168,7 +168,8 @@ set(kritaui_LIB_SRCS
     KisActionPlugin.cpp
     kis_canvas_controls_manager.cpp
     kis_multinode_property.cpp
-    KisWelcomePageWidget.cpp
+    KomaStudioHome.cpp
+    KomaStudioHomeStore.cpp
     KisUiFont.cpp
     KomaPaintStyle.cpp
     KomaPaintToolGroups.cpp
@@ -640,7 +641,6 @@ ki18n_wrap_ui(kritaui_LIB_SRCS
     forms/wdgstopgradienteditor.ui
     forms/wdgsessionmanager.ui
     forms/wdgnewwindowlayout.ui
-    forms/KisWelcomePage.ui
     forms/WdgDlgPaletteEditor.ui
     forms/KisNewsPage.ui
     forms/KisNewsItem.ui

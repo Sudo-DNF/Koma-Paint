@@ -24,6 +24,7 @@ kis_add_tests(
     KisSurfaceColorSpaceWrapperTest.cpp
     KisInputProfileManagerTest.cpp
     KomaLineartShapeTest.cpp
+    KomaStudioHomeStoreTest.cpp
     KomaLineartBenchmark.cpp
 
     LINK_LIBRARIES kritaui kritalibkis kritatestsdk

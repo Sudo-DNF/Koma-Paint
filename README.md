@@ -33,6 +33,17 @@ Koma Paint has dark and light themes. Both use flat panels, rounded controls and
 
 ## Features
 
+### Studio Home
+
+When no document is open, Koma Paint shows Studio Home:
+
+- **New canvas in one click:** Illustration (A4, 300 ppi), Comic page (B5, 600 ppi, with trim guides 3 mm inside the edges), Webtoon strip (800 × 12800 px) and Animation (1920 × 1080, 24 fps). Each starts on a Paper layer with a layer to draw on above it. An animation can also open the Animation workspace. Custom size opens the full New dialog with its templates.
+- **Recent files** as cards with thumbnails, folder and date, and a search box.
+- **Pinned files and collections:** right-click a file to pin it or add it to a named, coloured collection. Collections are listed in the sidebar and kept between sessions.
+- The canvas controls, and your Quick Access shortcut, along the bottom.
+
+![Studio Home with the canvas presets, two recent files (one pinned and in the Harbour Tales collection), and the collections sidebar](screenshots/studio-home.png)
+
 ### Sub Tool panel
 
 <img src="screenshots/sub-tool.png" alt="The Sub Tool panel showing the Ink group: Ink-1 Precision, Ink-2 Fineliner and Ink-3 Gpen with stroke previews" width="282" align="right">

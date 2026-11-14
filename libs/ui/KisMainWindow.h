@@ -439,7 +439,7 @@ protected:
 
 private:
 
-    friend class KisWelcomePageWidget;
+    friend class KomaStudioHome;
     void dragMove(QDragMoveEvent *event);
     void dragLeave();
 
