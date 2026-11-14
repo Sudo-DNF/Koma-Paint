@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <memory>
 #include <mutex>
+#include <chrono>
 #include <tuple>
 
 #include <KisLocalStrokeResources.h>
@@ -663,7 +664,7 @@ qint64 paintRecorderFrame(const KomaLineartRecorder &recorder, const QRectF &dir
     return timer.nsecsElapsed();
 }
 
-/// Total area of the image updates reported while it is alive.
+/// The image updates reported while it is alive: their total area and when they arrived.
 class ImageUpdateArea
 {
 public:
@@ -671,11 +672,11 @@ public:
     {
         m_connection = QObject::connect(image.data(), &KisImage::sigImageUpdated, image.data(),
                                         [this](const QRect &rect) {
+            const qint64 now = std::chrono::steady_clock::now().time_since_epoch().count();
             std::lock_guard<std::mutex> lock(m_mutex);
             m_area += qint64(rect.width()) * rect.height();
-            m_lastUpdate = m_clock.nsecsElapsed();
+            m_times.append(now);
         }, Qt::DirectConnection);
-        m_clock.start();
     }
     ~ImageUpdateArea()
     {
@@ -688,64 +689,106 @@ public:
         m_area = 0;
         return area;
     }
+    /// Steady-clock times (ns) of the updates since the last call.
+    QVector<qint64> takeTimes()
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        QVector<qint64> times;
+        std::swap(times, m_times);
+        return times;
+    }
 
 private:
     QMetaObject::Connection m_connection;
     std::mutex m_mutex;
     qint64 m_area {0};
-    qint64 m_lastUpdate {0};
-    QElapsedTimer m_clock;
+    QVector<qint64> m_times;
 };
 
 /**
- * Runs @p count edits at a 120 Hz input cadence with the event loop running,
- * as during a drag, and reports for each edit: the time the edit itself
- * takes, the time until the layer's projection shows it (the vector layer
- * compresses its updates), and, separately, the cost of repainting the
- * layer's dirty region after one edit.
+ * Measures @p count edits made as during a drag, in three ways:
+ *
+ * - a continuous drag at 120 Hz: the time each edit takes, and the
+ *   intervals between the updates the layer's projection receives (its
+ *   frame rate while the user drags);
+ * - single edits: the time until the projection shows one edit;
+ * - the repaint alone: the cost of repainting the layer's dirty region after
+ *   one edit, and the share of the layer one edit marks dirty.
  */
 void measureLayerEdits(const char *name, DenseLineart &dense, int count, const std::function<void(int)> &edit)
 {
     constexpr qint64 cadence = 8333333; // 120 Hz
     KisImageSP image = dense.parent->image;
     QVector<qint64> eventTimes;
+    QVector<qint64> frameIntervals;
     QVector<qint64> latencies;
     QVector<qint64> repaintTimes;
     qint64 largestUpdate = 0;
+    int next = 0;
     {
-        ImageUpdateArea area(image);
+        ImageUpdateArea updates(image);
         QElapsedTimer clock;
         clock.start();
-        for (int i = 0; i < count; ++i) {
+        for (int i = 0; i < count; ++i, ++next) {
             while (clock.nsecsElapsed() < i * cadence) {
                 QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
             }
             const qint64 start = clock.nsecsElapsed();
-            edit(i);
+            edit(next);
             eventTimes.append(clock.nsecsElapsed() - start);
+        }
+        const qint64 dragEnd = std::chrono::steady_clock::now().time_since_epoch().count();
+        while (dense.layer->hasPendingTimedUpdates()) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
+        }
+        image->waitForDone();
+        QCoreApplication::processEvents();
+        // One repaint reports several rects; updates within 1 ms are one frame.
+        QVector<qint64> frames;
+        for (qint64 time : updates.takeTimes()) {
+            if (time <= dragEnd && (frames.isEmpty() || time - frames.last() > 1000000)) {
+                frames.append(time);
+            }
+        }
+        for (int i = 1; i < frames.size(); ++i) {
+            frameIntervals.append(frames[i] - frames[i - 1]);
+        }
+    }
+    dense.settle();
+    {
+        ImageUpdateArea updates(image);
+        QElapsedTimer clock;
+        clock.start();
+        for (int i = 0; i < 60; ++i, ++next) {
+            const qint64 start = clock.nsecsElapsed();
+            edit(next);
             // Wait, with the event loop running, until the edit reached the projection.
             while (dense.layer->hasPendingTimedUpdates()) {
                 QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
             }
             image->waitForDone();
             latencies.append(clock.nsecsElapsed() - start);
-            largestUpdate = qMax(largestUpdate, area.takeArea());
+            QTest::qWait(30);
         }
-    }
-    // The repaint work alone: one more edit each, repainted immediately.
-    for (int i = 0; i < qMin(count, 60); ++i) {
-        edit(count + i);
-        QElapsedTimer timer;
-        timer.start();
-        dense.layer->forceUpdateTimedNode();
-        image->waitForDone();
-        repaintTimes.append(timer.nsecsElapsed());
+        // The repaint work alone: one more edit each, repainted immediately.
+        for (int i = 0; i < 60; ++i, ++next) {
+            edit(next);
+            updates.takeArea();
+            QElapsedTimer timer;
+            timer.start();
+            dense.layer->forceUpdateTimedNode();
+            image->waitForDone();
+            repaintTimes.append(timer.nsecsElapsed());
+            QCoreApplication::processEvents();
+            largestUpdate = qMax(largestUpdate, updates.takeArea());
+        }
     }
     QByteArray label(name);
     printPercentiles(QByteArray(label + ": per input event").constData(), eventTimes);
-    printPercentiles(QByteArray(label + ": event to layer projection updated (120 Hz input)").constData(), latencies);
+    printPercentiles(QByteArray(label + ": projection update interval during a 120 Hz drag").constData(), frameIntervals);
+    printPercentiles(QByteArray(label + ": single edit to projection updated").constData(), latencies);
     printPercentiles(QByteArray(label + ": dirty-region layer repaint").constData(), repaintTimes);
-    std::printf("%s: largest projection update after one event %.1f%% of the layer\n",
+    std::printf("%s: largest projection update after one edit %.1f%% of the layer\n",
                 name, 100.0 * largestUpdate / (image->width() * qreal(image->height())));
     std::fflush(stdout);
     dense.settle();
@@ -870,7 +913,9 @@ void KomaLineartBenchmark::denseAdjustWidth()
     const qreal radius = 20.0 / denseResolution;
     const qreal factor = 1.0 + 0.12 * 30 / 100.0;
     measureLayerEdits("Adjust Line Width over 220 lines", dense, 240, [&](int i) {
-        const qreal t = (i % 240) / 240.0;
+        // Sweep back and forth across the dense lines.
+        const int phase = i % 480;
+        const qreal t = (phase < 240 ? phase : 479 - phase) / 240.0;
         const QPointF point = QPointF(1500 + 400 * t, 300 + 800 * t + 30 * std::sin(i / 7.0)) / denseResolution;
         editor.adjustWidth(dense.layer.data(), point, radius, factor);
     });
