@@ -7,6 +7,8 @@
 #include "kis_shape_layer_canvas.h"
 
 #include <QPainter>
+#include <QSet>
+#include <QtConcurrentMap>
 #include <QMutexLocker>
 
 #include <KoShapeManager.h>
@@ -19,6 +21,7 @@
 #include <kis_layer.h>
 #include <kis_painter.h>
 #include <flake/kis_shape_layer.h>
+#include "flake/KomaLineartShape.h"
 #include <KoCompositeOpRegistry.h>
 #include <KoSelection.h>
 #include <KoUnit.h>
@@ -467,12 +470,96 @@ void KisShapeLayerCanvas::repaint()
     const qint32 MASK_IMAGE_WIDTH = 256;
     const qint32 MASK_IMAGE_HEIGHT = 256;
 
-    QImage image(MASK_IMAGE_WIDTH, MASK_IMAGE_HEIGHT, QImage::Format_ARGB32);
-    QPainter tempPainter(&image);
+    const QList<KoShapeManager::PaintJob> &jobs = paintJobsOrder.jobs;
+    const bool antialiased = m_parentLayer->antialiased();
+    const QTransform documentToView = viewConverter()->documentToView();
 
-    if(m_parentLayer->antialiased()) {
-        tempPainter.setRenderHint(QPainter::Antialiasing);
-        tempPainter.setRenderHint(QPainter::TextAntialiasing);
+    // Paints one job's shapes into an image the size of its patch.
+    auto paintPatch = [&](const KoShapeManager::PaintJob &job) {
+        QImage image(MASK_IMAGE_WIDTH, MASK_IMAGE_HEIGHT, QImage::Format_ARGB32);
+        image.fill(0);
+        QPainter painter(&image);
+        if (antialiased) {
+            painter.setRenderHint(QPainter::Antialiasing);
+            painter.setRenderHint(QPainter::TextAntialiasing);
+        }
+        painter.setClipRect(QRect(0, 0, job.viewUpdateRect.width(), job.viewUpdateRect.height()));
+        painter.setTransform(documentToView *
+                             QTransform::fromTranslate(-job.viewUpdateRect.x(), -job.viewUpdateRect.y()));
+        m_shapeManager->paintJob(painter, job);
+        painter.end();
+        return image;
+    };
+
+    QVector<int> paintable;
+    QVector<bool> isPaintable(jobs.size(), false);
+    for (int i = 0; i < jobs.size(); ++i) {
+        const KoShapeManager::PaintJob &job = jobs[i];
+        if (job.isEmpty()) {
+            continue;
+        }
+        KIS_SAFE_ASSERT_RECOVER(job.viewUpdateRect.width() <= MASK_IMAGE_WIDTH &&
+                                job.viewUpdateRect.height() <= MASK_IMAGE_HEIGHT) {
+            continue;
+        }
+        paintable.append(i);
+        isPaintable[i] = true;
+    }
+
+    /**
+     * Patches are independent, so when every shape may be painted from
+     * several threads at once they are painted in parallel. Lineart strokes
+     * may: their renders are cached behind a lock, so a line is still
+     * rendered once however many patches it crosses. Other shapes (text
+     * caches its layout lazily, for one) are painted one patch at a time.
+     * The patches are written to the projection in order either way, so the
+     * result is the same.
+     */
+    bool concurrentPaint = paintable.size() > 1;
+    for (int index : std::as_const(paintable)) {
+        for (KoShape *shape : jobs[index].shapes) {
+            if (!dynamic_cast<KomaLineartShape*>(shape)) {
+                concurrentPaint = false;
+                break;
+            }
+        }
+        if (!concurrentPaint) {
+            break;
+        }
+    }
+
+    QVector<QImage> patches(jobs.size());
+    if (concurrentPaint) {
+        /**
+         * Render every line first, all at the same time. A line whose render
+         * is not cached yet (it was just edited) costs far more than the
+         * rest of the repaint, and a patch crossing several such lines would
+         * otherwise render them one after another. Rendering goes through
+         * the same path as painting, into a 1x1 image, so each line is
+         * rendered at exactly the scale the patches then find in its cache.
+         */
+        QVector<KoShape*> lines;
+        QSet<KoShape*> seen;
+        for (int index : std::as_const(paintable)) {
+            for (KoShape *shape : jobs[index].shapes) {
+                if (!seen.contains(shape)) {
+                    seen.insert(shape);
+                    lines.append(shape);
+                }
+            }
+        }
+        QtConcurrent::blockingMap(lines, [&](KoShape *line) {
+            QImage target(1, 1, QImage::Format_ARGB32);
+            target.fill(0);
+            QPainter painter(&target);
+            painter.setClipRect(QRect(0, 0, 1, 1));
+            painter.setTransform(documentToView);
+            KoShapeManager::renderSingleShape(line, painter);
+        });
+
+        QtConcurrent::blockingMap(paintable, [&](int index) {
+            patches[index] = paintPatch(jobs[index]);
+        });
     }
 
     quint8 * dstData = new quint8[MASK_IMAGE_WIDTH * MASK_IMAGE_HEIGHT * m_projection->pixelSize()];
@@ -481,25 +568,17 @@ void KisShapeLayerCanvas::repaint()
         m_projection->clear(rect);
     }
 
-    Q_FOREACH (const KoShapeManager::PaintJob &job, paintJobsOrder.jobs) {
+    for (int index = 0; index < jobs.size(); ++index) {
+        const KoShapeManager::PaintJob &job = jobs[index];
         if (job.isEmpty()) {
             m_projection->clear(job.viewUpdateRect);
             continue;
         }
-
-        KIS_SAFE_ASSERT_RECOVER(job.viewUpdateRect.width() <= MASK_IMAGE_WIDTH &&
-                                job.viewUpdateRect.height() <= MASK_IMAGE_HEIGHT) {
+        if (!isPaintable[index]) {
             continue;
         }
 
-        image.fill(0);
-
-        tempPainter.setTransform(QTransform());
-        tempPainter.setClipRect(QRect(0,0,job.viewUpdateRect.width(), job.viewUpdateRect.height()));
-        tempPainter.setTransform(viewConverter()->documentToView() *
-                                 QTransform::fromTranslate(-job.viewUpdateRect.x(), -job.viewUpdateRect.y()));
-
-        m_shapeManager->paintJob(tempPainter, job);
+        const QImage image = concurrentPaint ? patches[index] : paintPatch(job);
 
         if (image.size() != job.viewUpdateRect.size()) {
             const quint8 *imagePtr = image.constBits();
@@ -535,6 +614,7 @@ void KisShapeLayerCanvas::repaint()
                                      MASK_IMAGE_HEIGHT);
 
         }
+        patches[index] = QImage();
     }
 
     delete[] dstData;

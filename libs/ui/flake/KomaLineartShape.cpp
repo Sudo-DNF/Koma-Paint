@@ -401,7 +401,14 @@ QImage KomaLineartShape::renderWithBrush(qreal scale, QRectF *localRect) const
     KisPaintLayerSP layer = new KisPaintLayer(image, QStringLiteral("lineart"), OPACITY_OPAQUE_U8, colorSpace);
     KisPaintDeviceSP device = layer->paintDevice();
 
-    KisPaintOpPresetSP preset = m_brush->clone().dynamicCast<KisPaintOpPreset>();
+    KisPaintOpPresetSP preset;
+    {
+        // Lines drawn in one stroke share their brush snapshot, and lines are
+        // rendered from several threads when a vector layer repaints.
+        static QMutex cloneMutex;
+        QMutexLocker locker(&cloneMutex);
+        preset = m_brush->clone().dynamicCast<KisPaintOpPreset>();
+    }
     if (!preset || !preset->settings()) {
         return QImage();
     }
