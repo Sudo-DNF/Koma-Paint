@@ -768,7 +768,14 @@ void measureLayerEdits(const char *name, DenseLineart &dense, int count, const s
             }
             image->waitForDone();
             latencies.append(clock.nsecsElapsed() - start);
-            QTest::qWait(30);
+            // Pause between edits without letting the CPU idle: after even a
+            // short sleep a laptop CPU runs the next repaint at lower clocks,
+            // which would measure its power management rather than the edit.
+            QElapsedTimer pause;
+            pause.start();
+            while (pause.elapsed() < 30) {
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
+            }
         }
         // The repaint work alone: one more edit each, repainted immediately.
         for (int i = 0; i < 60; ++i, ++next) {
