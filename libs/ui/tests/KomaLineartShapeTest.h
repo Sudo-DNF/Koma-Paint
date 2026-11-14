@@ -33,6 +33,7 @@ private Q_SLOTS:
     void testBrushRenderContextReuse_data();
     void testBrushRenderContextReuse();
     void testInteractiveRendering();
+    void testSharedLineIndexMatchesPerLineIndex();
 };
 
 #endif // KOMALINEARTSHAPETEST_H

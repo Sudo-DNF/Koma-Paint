@@ -760,3 +760,52 @@ void KomaLineartShapeTest::testInteractiveRendering()
     shape.setInteractive(false);
     QCOMPARE(paint(shape), exactRender(finalCenterline));
 }
+
+void KomaLineartShapeTest::testSharedLineIndexMatchesPerLineIndex()
+{
+    // Erasing up to intersection against one index of every line (leaving
+    // out the erased line itself) must give the same pieces as indexing, for
+    // each line, the other lines whose bounds overlap it.
+    QRandomGenerator random(0x4b1d);
+    for (int iteration = 0; iteration < 40; ++iteration) {
+        QVector<QVector<KomaLineartPoint>> lines;
+        QVector<QVector<QPointF>> polylines;
+        QVector<QRectF> bounds;
+        for (int l = 0; l < 25; ++l) {
+            QVector<KomaLineartPoint> line;
+            QPointF point(random.bounded(400), random.bounded(400));
+            for (int i = 0; i < 30; ++i) {
+                point += QPointF(int(random.bounded(41)) - 20, int(random.bounded(41)) - 20);
+                line.append({point, 2 + qreal(random.bounded(6))});
+            }
+            QVector<QPointF> polyline;
+            QRectF box(line.first().position, QSizeF());
+            for (const KomaLineartPoint &p : line) {
+                polyline.append(p.position);
+                box |= QRectF(p.position, QSizeF());
+            }
+            lines.append(line);
+            polylines.append(polyline);
+            bounds.append(box);
+        }
+        QVector<QPointF> trail;
+        for (int i = 0; i < 12; ++i) {
+            trail.append(QPointF(random.bounded(400), random.bounded(400)));
+        }
+        const qreal radius = 1 + iteration % 9;
+        const KomaLineartShape::LineIndex shared(polylines);
+        for (int own = 0; own < lines.size(); ++own) {
+            QVector<QVector<QPointF>> others;
+            for (int i = 0; i < lines.size(); ++i) {
+                const QRectF &a = bounds[own];
+                const QRectF &b = bounds[i];
+                if (i != own && a.left() <= b.right() && a.right() >= b.left()
+                        && a.top() <= b.bottom() && a.bottom() >= b.top()) {
+                    others.append(polylines[i]);
+                }
+            }
+            QCOMPARE(KomaLineartShape::eraseUpToIntersection(lines[own], trail, radius, shared, own),
+                     KomaLineartShape::eraseUpToIntersection(lines[own], trail, radius, others));
+        }
+    }
+}

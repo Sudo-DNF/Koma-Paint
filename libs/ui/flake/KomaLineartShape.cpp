@@ -909,6 +909,7 @@ namespace
 struct LineSegment {
     QPointF a;
     QPointF b;
+    int line {-1}; ///< The polyline the segment belongs to, if indexed with others.
 
     QRectF bounds() const
     {
@@ -1003,12 +1004,12 @@ private:
     QVector<Node> m_nodes;
 };
 
-QVector<LineSegment> lineSegments(const QVector<QPointF> &points)
+QVector<LineSegment> lineSegments(const QVector<QPointF> &points, int line = -1)
 {
     QVector<LineSegment> segments;
     segments.reserve(qMax<qsizetype>(0, points.size() - 1));
     for (int i = 0; i + 1 < points.size(); ++i) {
-        segments.append({points[i], points[i + 1]});
+        segments.append({points[i], points[i + 1], line});
     }
     return segments;
 }
@@ -1109,10 +1110,39 @@ QVector<QVector<KomaLineartPoint>> KomaLineartShape::eraseTouchedArea(const QVec
     return pieces;
 }
 
+struct KomaLineartShape::LineIndex::Private {
+    explicit Private(QVector<LineSegment> segments)
+        : index(std::move(segments))
+    {
+    }
+    SegmentIndex index;
+};
+
+KomaLineartShape::LineIndex::LineIndex(const QVector<QVector<QPointF>> &lines)
+{
+    QVector<LineSegment> segments;
+    for (int line = 0; line < lines.size(); ++line) {
+        segments += lineSegments(lines[line], line);
+    }
+    d.reset(new Private(std::move(segments)));
+}
+
+KomaLineartShape::LineIndex::~LineIndex()
+{
+}
+
 QVector<QVector<KomaLineartPoint>> KomaLineartShape::eraseUpToIntersection(const QVector<KomaLineartPoint> &dense,
                                                                          const QVector<QPointF> &eraserPath,
                                                                          qreal eraserRadius,
                                                                          const QVector<QVector<QPointF>> &otherLines)
+{
+    return eraseUpToIntersection(dense, eraserPath, eraserRadius, LineIndex(otherLines), -1);
+}
+
+QVector<QVector<KomaLineartPoint>> KomaLineartShape::eraseUpToIntersection(const QVector<KomaLineartPoint> &dense,
+                                                                         const QVector<QPointF> &eraserPath,
+                                                                         qreal eraserRadius,
+                                                                         const LineIndex &lines, int ownLine)
 {
     const QVector<bool> touched = touchedSamples(dense, eraserPath, eraserRadius);
     if (!touched.contains(true)) {
@@ -1120,18 +1150,13 @@ QVector<QVector<KomaLineartPoint>> KomaLineartShape::eraseUpToIntersection(const
     }
 
     // Where this line crosses the others, as fractional sample indices.
-    QVector<LineSegment> otherSegments;
-    for (const QVector<QPointF> &other : otherLines) {
-        otherSegments += lineSegments(other);
-    }
-    const SegmentIndex index(std::move(otherSegments));
     QVector<qreal> crossings;
     for (int i = 0; i + 1 < dense.size(); ++i) {
         const QPointF first = dense[i].position;
         const QPointF last = dense[i + 1].position;
-        index.visit(QRectF(first, last).normalized(), [&](const LineSegment &segment) {
+        lines.d->index.visit(QRectF(first, last).normalized(), [&](const LineSegment &segment) {
             qreal t = 0;
-            if (crossing(first, last, segment.a, segment.b, &t)) {
+            if (segment.line != ownLine && crossing(first, last, segment.a, segment.b, &t)) {
                 crossings.append(i + t);
             }
             return false;

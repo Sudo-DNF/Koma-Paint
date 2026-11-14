@@ -11,6 +11,7 @@
 #include <QMutex>
 #include <QPainterPath>
 #include <QPointF>
+#include <QScopedPointer>
 #include <QVector>
 
 #include <KoPathShape.h>
@@ -175,6 +176,32 @@ public:
                                                                    const QVector<QPointF> &eraserPath,
                                                                    qreal eraserRadius,
                                                                    const QVector<QVector<QPointF>> &otherLines);
+
+    /**
+     * A spatial index of the segments of several polylines, for erasing
+     * many lines up to their intersections without indexing the other
+     * lines again for each of them.
+     */
+    class KRITAUI_EXPORT LineIndex
+    {
+    public:
+        explicit LineIndex(const QVector<QVector<QPointF>> &lines);
+        ~LineIndex();
+
+    private:
+        friend class KomaLineartShape;
+        struct Private;
+        QScopedPointer<Private> d;
+    };
+
+    /**
+     * As above, with the crossing lines taken from @p lines, leaving out
+     * line @p ownLine of the index (the line being erased), or none if -1.
+     */
+    static QVector<QVector<KomaLineartPoint>> eraseUpToIntersection(const QVector<KomaLineartPoint> &dense,
+                                                                   const QVector<QPointF> &eraserPath,
+                                                                   qreal eraserRadius,
+                                                                   const LineIndex &lines, int ownLine);
 
     /**
      * Scales the width of a (densified) line around @p center: points

@@ -42,29 +42,6 @@ constexpr qreal simplifyTolerancePixels = 0.35;
 
 const QString eraserModeKey = QStringLiteral("KomaPaint/VectorEraserMode");
 
-QRectF polylineBounds(const QVector<QPointF> &points)
-{
-    if (points.isEmpty()) {
-        return QRectF();
-    }
-    qreal left = points.first().x();
-    qreal right = left;
-    qreal top = points.first().y();
-    qreal bottom = top;
-    for (const QPointF &point : points) {
-        left = qMin(left, point.x());
-        right = qMax(right, point.x());
-        top = qMin(top, point.y());
-        bottom = qMax(bottom, point.y());
-    }
-    return QRectF(QPointF(left, top), QPointF(right, bottom));
-}
-
-bool boundsOverlap(const QRectF &a, const QRectF &b)
-{
-    return a.left() <= b.right() && a.right() >= b.left()
-            && a.top() <= b.bottom() && a.bottom() >= b.top();
-}
 }
 
 KomaLineartRecorder::EraserMode KomaLineartRecorder::eraserMode()
@@ -389,7 +366,6 @@ QVector<KomaLineartRecorder::PartialErase> KomaLineartRecorder::partialErase() c
 
     // Lines crossing the erased ones bound "erase up to intersection".
     QVector<QVector<QPointF>> allLines;
-    QVector<QRectF> allBounds;
     QHash<KomaLineartShape*, int> lineIndex;
     QVector<QVector<KomaLineartPoint>> denseLines;
     if (m_eraserMode == EraserMode::UpToIntersection) {
@@ -406,25 +382,20 @@ QVector<KomaLineartRecorder::PartialErase> KomaLineartRecorder::partialErase() c
                 polyline.append(point.position);
             }
             lineIndex.insert(line, allLines.size());
-            allBounds.append(polylineBounds(polyline));
             allLines.append(polyline);
             denseLines.append(dense);
         }
     }
 
+    // One index of every line's segments serves all the erased lines.
+    const KomaLineartShape::LineIndex crossingLines(allLines);
     for (KomaLineartShape *line : std::as_const(m_erased)) {
         QVector<KomaLineartPoint> dense;
         QVector<QVector<KomaLineartPoint>> pieces;
         if (m_eraserMode == EraserMode::UpToIntersection) {
             const int own = lineIndex.value(line, -1);
             dense = own >= 0 ? denseLines[own] : KomaLineartShape::densify(line->centerlineInDocument(), spacing);
-            QVector<QVector<QPointF>> others;
-            for (int i = 0; i < allLines.size(); ++i) {
-                if (i != own && (own < 0 || boundsOverlap(allBounds[own], allBounds[i]))) {
-                    others.append(allLines[i]);
-                }
-            }
-            pieces = KomaLineartShape::eraseUpToIntersection(dense, m_eraserTrail, m_eraserRadius, others);
+            pieces = KomaLineartShape::eraseUpToIntersection(dense, m_eraserTrail, m_eraserRadius, crossingLines, own);
         } else {
             dense = KomaLineartShape::densify(line->centerlineInDocument(), spacing);
             pieces = KomaLineartShape::eraseTouchedArea(dense, m_eraserTrail, m_eraserRadius);
