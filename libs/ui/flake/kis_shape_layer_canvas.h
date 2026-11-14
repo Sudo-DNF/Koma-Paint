@@ -126,6 +126,8 @@ private:
     QRegion m_dirtyRegion;
     QMutex m_dirtyRegionMutex;
     KoShapeManager::PaintJobsOrder m_paintJobsOrder;
+    /// The rects m_paintJobsOrder clears and marks dirty: its uncropped region.
+    QVector<QRect> m_paintJobsUncroppedRects;
 
     QRect m_cachedImageRect;
 

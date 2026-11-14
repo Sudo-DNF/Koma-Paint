@@ -325,44 +325,50 @@ void KisShapeLayerCanvas::slotStartAsyncRepaint()
         return;
     }
 
-    QRect repaintRect;
-    QRect uncroppedRepaintRect;
+    /**
+     * The dirty region itself is repainted, not its bounding rect: an edit
+     * of two long lines, one across and one down, dirties two thin strips
+     * whose bounding rect can cover most of the layer.
+     */
+    QRegion repaintRegion;
+    QRegion uncroppedRepaintRegion;
     bool forceUpdateHiddenAreasOnly = false;
     const qint32 MASK_IMAGE_WIDTH = 256;
     const qint32 MASK_IMAGE_HEIGHT = 256;
     {
         QMutexLocker locker(&m_dirtyRegionMutex);
 
-        repaintRect = m_dirtyRegion.boundingRect();
+        repaintRegion = m_dirtyRegion;
         forceUpdateHiddenAreasOnly = m_forceUpdateHiddenAreasOnly;
 
         /// Since we are going to override the previous jobs, we should fetch
         /// all the area covered by it. Otherwise we'll get dirty leftovers of
         /// the layer on the projection
         Q_FOREACH (const KoShapeManager::PaintJob &job, m_paintJobsOrder.jobs) {
-            repaintRect |= viewConverter()->documentToView().mapRect(job.docUpdateRect).toAlignedRect();
+            repaintRegion += viewConverter()->documentToView().mapRect(job.docUpdateRect).toAlignedRect();
         }
         m_paintJobsOrder.clear();
+        m_paintJobsUncroppedRects.clear();
 
         m_dirtyRegion = QRegion();
         m_forceUpdateHiddenAreasOnly = false;
     }
 
     if (!forceUpdateHiddenAreasOnly) {
-        if (repaintRect.isEmpty()) {
+        if (repaintRegion.isEmpty()) {
             // Nothing is left to repaint, so no update is pending any more.
             m_hasUpdateInCompressor = false;
             return;
         }
 
-        // Crop the update rect by the image bounds. We keep the cache consistent
+        // Crop the update region by the image bounds. We keep the cache consistent
         // by tracking the size of the image in slotImageSizeChanged()
-        uncroppedRepaintRect = repaintRect;
-        repaintRect = repaintRect.intersected(image->bounds());
+        uncroppedRepaintRegion = repaintRegion;
+        repaintRegion &= image->bounds();
     } else {
         const QRectF shapesBounds = KoShape::boundingRect(m_shapeManager->shapes());
-        repaintRect |= kisGrowRect(viewConverter()->documentToView(shapesBounds).toAlignedRect(), 2);
-        uncroppedRepaintRect = repaintRect;
+        repaintRegion += kisGrowRect(viewConverter()->documentToView(shapesBounds).toAlignedRect(), 2);
+        uncroppedRepaintRegion = repaintRegion;
     }
 
     /**
@@ -393,16 +399,18 @@ void KisShapeLayerCanvas::slotStartAsyncRepaint()
      *     can happen only from a single GUI thread.
      */
 
-    const QVector<QRect> updateRects =
-        KritaUtils::splitRectIntoPatchesTight(repaintRect,
-                                              QSize(MASK_IMAGE_WIDTH, MASK_IMAGE_HEIGHT));
+    QVector<QRect> updateRects;
+    for (const QRect &rect : repaintRegion) {
+        updateRects += KritaUtils::splitRectIntoPatchesTight(rect, QSize(MASK_IMAGE_WIDTH, MASK_IMAGE_HEIGHT));
+    }
 
     KoShapeManager::PaintJobsOrder jobsOrder;
     Q_FOREACH (const QRect &viewUpdateRect, updateRects) {
         jobsOrder.jobs << KoShapeManager::PaintJob(viewConverter()->viewToDocument().mapRect(QRectF(viewUpdateRect)),
                                               viewUpdateRect);
     }
-    jobsOrder.uncroppedViewUpdateRect = uncroppedRepaintRect;
+    jobsOrder.uncroppedViewUpdateRect = uncroppedRepaintRegion.boundingRect();
+    const QVector<QRect> uncroppedRects(uncroppedRepaintRegion.begin(), uncroppedRepaintRegion.end());
 
     m_shapeManager->preparePaintJobs(jobsOrder, m_parentLayer);
 
@@ -413,6 +421,7 @@ void KisShapeLayerCanvas::slotStartAsyncRepaint()
         // the only actor that can add stuff to it.
         KIS_SAFE_ASSERT_RECOVER_NOOP(m_paintJobsOrder.isEmpty());
         m_paintJobsOrder = jobsOrder;
+        m_paintJobsUncroppedRects = uncroppedRects;
     }
 
     m_hasUpdateInCompressor = false;
@@ -441,10 +450,12 @@ void KisShapeLayerCanvas::repaint()
 {
 
     KoShapeManager::PaintJobsOrder paintJobsOrder;
+    QVector<QRect> uncroppedRects;
 
     {
         QMutexLocker locker(&m_dirtyRegionMutex);
         std::swap(paintJobsOrder, m_paintJobsOrder);
+        std::swap(uncroppedRects, m_paintJobsUncroppedRects);
     }
 
     /**
@@ -466,8 +477,9 @@ void KisShapeLayerCanvas::repaint()
 
     quint8 * dstData = new quint8[MASK_IMAGE_WIDTH * MASK_IMAGE_HEIGHT * m_projection->pixelSize()];
 
-    QRect repaintRect = paintJobsOrder.uncroppedViewUpdateRect;
-    m_projection->clear(repaintRect);
+    for (const QRect &rect : std::as_const(uncroppedRects)) {
+        m_projection->clear(rect);
+    }
 
     Q_FOREACH (const KoShapeManager::PaintJob &job, paintJobsOrder.jobs) {
         if (job.isEmpty()) {
@@ -523,12 +535,12 @@ void KisShapeLayerCanvas::repaint()
                                      MASK_IMAGE_HEIGHT);
 
         }
-        repaintRect |= job.viewUpdateRect;
     }
 
     delete[] dstData;
     m_projection->purgeDefaultPixels();
-    m_parentLayer->setDirty(repaintRect);
+    // The painted patches all lie within the uncropped rects.
+    m_parentLayer->setDirty(uncroppedRects);
 
     m_hasChangedWhileBeingInvisible |= !m_parentLayer->visible(true);
 }
