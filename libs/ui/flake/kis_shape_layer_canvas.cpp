@@ -463,9 +463,11 @@ void KisShapeLayerCanvas::repaint()
 
     /**
      * Sometimes two update jobs might not override and the second one
-     * will arrive right after the first one
+     * will arrive right after the first one. A repaint can also have rects
+     * to clear but nothing to paint: when the image shrinks, the area it
+     * left lies outside the image, and its old pixels must still go.
      */
-    if (paintJobsOrder.isEmpty()) return;
+    if (paintJobsOrder.isEmpty() && uncroppedRects.isEmpty()) return;
 
     const qint32 MASK_IMAGE_WIDTH = 256;
     const qint32 MASK_IMAGE_HEIGHT = 256;
