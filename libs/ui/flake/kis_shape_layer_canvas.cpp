@@ -140,7 +140,7 @@ KisShapeLayerCanvas::KisShapeLayerCanvas(const KoColorSpace *cs, KisDefaultBound
         : KisShapeLayerCanvasBase(parent)
         , m_projection(new KisPaintDevice(parent, cs, defaultBounds))
         , m_parentLayer(parent)
-        , m_asyncUpdateSignalCompressor(25, KisSignalCompressor::FIRST_ACTIVE)
+        , m_asyncUpdateSignalCompressor(16, KisSignalCompressor::FIRST_ACTIVE)
         , m_safeForcedConnection(std::bind(&KisShapeLayerCanvas::slotStartAsyncRepaint, this))
 {
     /**
@@ -157,7 +157,7 @@ KisShapeLayerCanvas::KisShapeLayerCanvas(const KisShapeLayerCanvas &rhs, KisShap
         : KisShapeLayerCanvasBase(rhs, parent)
         , m_projection(new KisPaintDevice(*rhs.m_projection))
         , m_parentLayer(parent)
-        , m_asyncUpdateSignalCompressor(25, KisSignalCompressor::FIRST_ACTIVE)
+        , m_asyncUpdateSignalCompressor(16, KisSignalCompressor::FIRST_ACTIVE)
         , m_safeForcedConnection(std::bind(&KisShapeLayerCanvas::slotStartAsyncRepaint, this))
 {
     /**
