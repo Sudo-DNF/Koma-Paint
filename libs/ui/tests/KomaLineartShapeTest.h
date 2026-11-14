@@ -30,6 +30,8 @@ private Q_SLOTS:
     void testIndexedEraserMatchesBruteForce();
     void testIndexedIntersectionBoundaries();
     void testEraserOverlayFill();
+    void testBrushRenderContextReuse_data();
+    void testBrushRenderContextReuse();
 };
 
 #endif // KOMALINEARTSHAPETEST_H

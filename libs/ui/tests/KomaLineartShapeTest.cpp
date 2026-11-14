@@ -12,6 +12,11 @@
 #include <QPainterPathStroker>
 
 #include <KisGlobalResourcesInterface.h>
+#include <KisLocalStrokeResources.h>
+#include <KisResourceTypes.h>
+#include <resources/KoPattern.h>
+#include <brushengine/kis_paintop_settings.h>
+#include <cmath>
 #include <KoShapeManager.h>
 #include <KoAddRemoveShapeCommands.h>
 #include <brushengine/kis_paintop_preset.h>
@@ -614,3 +619,69 @@ void KomaLineartShapeTest::testEraserOverlayFill()
 }
 
 SIMPLE_TEST_MAIN(KomaLineartShapeTest)
+
+void KomaLineartShapeTest::testBrushRenderContextReuse_data()
+{
+    QTest::addColumn<QString>("presetFile");
+    QTest::newRow("round") << QStringLiteral("autobrush_300px.kpp");
+    QTest::newRow("textured") << QStringLiteral("auto_textured_17.kpp");
+    QTest::newRow("hatching") << QStringLiteral("hatching_30px.kpp");
+}
+
+void KomaLineartShapeTest::testBrushRenderContextReuse()
+{
+    // Lines rendered with the brush engine kept from the previous line must
+    // come out exactly as lines rendered with a brush engine of their own.
+    QFETCH(QString, presetFile);
+    QSharedPointer<KisLocalStrokeResources> resources(new KisLocalStrokeResources());
+    const QString patternPath = QFINDTESTDATA("../../../krita/data/patterns/Cross03.pat");
+    QVERIFY(!patternPath.isEmpty());
+    KoPatternSP pattern(new KoPattern(patternPath));
+    QVERIFY(pattern->load(resources));
+    pattern->setFilename(QStringLiteral("Cross03.pat"));
+    resources->addResource(pattern);
+    KisPaintOpPresetSP loaded(new KisPaintOpPreset(TestUtil::fetchDataFileLazy(presetFile)));
+    QVERIFY(loaded->load(resources));
+    loaded->setResourcesInterface(resources);
+
+    auto makeLine = [](bool longLine) {
+        QVector<KomaLineartPoint> points;
+        const int count = longLine ? 60 : 12;
+        for (int i = 0; i <= count; ++i) {
+            const qreal t = qreal(i) / count;
+            const QPointF position = longLine
+                    ? QPointF(20 + 380 * t, 150 + 60 * std::sin(t * 7))
+                    : QPointF(60 + 90 * t, 40 + 30 * t * t);
+            points.append({position, 4 + 10 * std::sin(M_PI * t)});
+        }
+        return points;
+    };
+    auto render = [](const KisPaintOpPresetSP &brush, const QVector<KomaLineartPoint> &centerline) {
+        KomaLineartShape shape;
+        shape.setLineColor(QColor(30, 20, 90));
+        shape.setCenterlineInDocument(centerline);
+        shape.setBrush(brush, 14);
+        QImage image(900, 600, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image);
+        painter.scale(2, 2);
+        painter.setTransform(shape.absoluteTransformation(), true);
+        shape.paint(painter);
+        painter.end();
+        return image;
+    };
+
+    const QVector<KomaLineartPoint> shortLine = makeLine(false);
+    const QVector<KomaLineartPoint> longLine = makeLine(true);
+    // Each snapshot gets a brush engine of its own.
+    const QImage freshShort = render(KomaLineartShape::brushSnapshot(loaded, Qt::black), shortLine);
+    const QImage freshLong = render(KomaLineartShape::brushSnapshot(loaded, Qt::black), longLine);
+    QVERIFY(freshShort != QImage(freshShort.size(), freshShort.format()));
+
+    // One snapshot: each render after the first reuses the previous engine.
+    const KisPaintOpPresetSP shared = KomaLineartShape::brushSnapshot(loaded, Qt::black);
+    QCOMPARE(render(shared, shortLine), freshShort);
+    QCOMPARE(render(shared, longLine), freshLong);
+    QCOMPARE(render(shared, shortLine), freshShort);
+    QCOMPARE(render(shared, longLine), freshLong);
+}

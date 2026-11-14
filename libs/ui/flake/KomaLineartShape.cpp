@@ -13,6 +13,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <memory>
+#include <vector>
 #include <cmath>
 #include <limits>
 
@@ -46,6 +48,8 @@
 #include <tuple>
 #include <KoCompositeOpRegistry.h>
 #include <QPainter>
+#include <QCoreApplication>
+#include <QThread>
 
 namespace
 {
@@ -127,6 +131,87 @@ LineartRenderStore &renderStore()
     static LineartRenderStore store;
     return store;
 }
+
+/**
+ * What rendering a line with its brush needs besides the line: an image, a
+ * layer and a painter holding the brush engine. Creating them takes about a
+ * third of a typical line's render (the paint op builds its brush masks), so
+ * they are kept for the next line rendered with the same brush snapshot, at
+ * the same size and in the same colour. Lines drawn in one stroke share their
+ * snapshot, and an edited line keeps its own.
+ */
+struct BrushRenderContext {
+    KisPaintOpPresetSP source;   ///< The snapshot the context paints with.
+    qreal paintOpSize {0};
+    QRgb color {0};
+    KisImageSP image;
+    KisPaintLayerSP layer;
+    std::unique_ptr<KisPainter> painter;
+
+    bool matches(const KisPaintOpPresetSP &brush, qreal size, QRgb rgba) const
+    {
+        return source == brush && paintOpSize == size && color == rgba;
+    }
+};
+
+/**
+ * Keeps a few idle render contexts. A render takes one for itself and gives
+ * it back afterwards, so contexts are never shared between threads.
+ */
+class BrushRenderContextPool
+{
+public:
+    static BrushRenderContextPool &instance()
+    {
+        static BrushRenderContextPool pool;
+        return pool;
+    }
+
+    std::unique_ptr<BrushRenderContext> take(const KisPaintOpPresetSP &brush, qreal size, QRgb color)
+    {
+        QMutexLocker locker(&m_mutex);
+        for (auto it = m_idle.begin(); it != m_idle.end(); ++it) {
+            if ((*it)->matches(brush, size, color)) {
+                std::unique_ptr<BrushRenderContext> context = std::move(*it);
+                m_idle.erase(it);
+                return context;
+            }
+        }
+        return nullptr;
+    }
+
+    void giveBack(std::unique_ptr<BrushRenderContext> context)
+    {
+        QMutexLocker locker(&m_mutex);
+        if (!m_releaseRegistered) {
+            // Release the contexts while the application still runs: images
+            // and brush engines must not outlive the resource registries.
+            qAddPostRoutine(&BrushRenderContextPool::releaseAll);
+            m_releaseRegistered = true;
+        }
+        m_idle.push_back(std::move(context));
+        // Enough for every rendering thread to keep its most recent brush.
+        const size_t limit = size_t(qMax(2, QThread::idealThreadCount()) * 2);
+        while (m_idle.size() > limit) {
+            m_idle.erase(m_idle.begin());
+        }
+    }
+
+private:
+    static void releaseAll()
+    {
+        BrushRenderContextPool &pool = instance();
+        std::vector<std::unique_ptr<BrushRenderContext>> idle;
+        {
+            QMutexLocker locker(&pool.m_mutex);
+            std::swap(idle, pool.m_idle);
+        }
+    }
+
+    QMutex m_mutex;
+    std::vector<std::unique_ptr<BrushRenderContext>> m_idle;
+    bool m_releaseRegistered {false};
+};
 
 QPointF normalized(const QPointF &v)
 {
@@ -397,32 +482,48 @@ QImage KomaLineartShape::renderWithBrush(qreal scale, QRectF *localRect) const
     const int height = qMax(1, qCeil(bounds.height() * renderScale));
 
     const KoColorSpace *colorSpace = KoColorSpaceRegistry::instance()->rgb8();
-    KisImageSP image = new KisImage(nullptr, width, height, colorSpace, QStringLiteral("lineart"));
-    KisPaintLayerSP layer = new KisPaintLayer(image, QStringLiteral("lineart"), OPACITY_OPAQUE_U8, colorSpace);
-    KisPaintDeviceSP device = layer->paintDevice();
+    const qreal paintOpSize = m_fullPressureWidth * renderScale;
+    const QColor color = lineColor();
+    BrushRenderContextPool &pool = BrushRenderContextPool::instance();
+    std::unique_ptr<BrushRenderContext> context = pool.take(m_brush, paintOpSize, color.rgba());
+    if (context) {
+        context->layer->paintDevice()->clear();
+    } else {
+        context.reset(new BrushRenderContext);
+        context->source = m_brush;
+        context->paintOpSize = paintOpSize;
+        context->color = color.rgba();
+        // The layer's paint device is unbounded; the image only gives the
+        // brush engine the image and node it expects.
+        context->image = new KisImage(nullptr, width, height, colorSpace, QStringLiteral("lineart"));
+        context->layer = new KisPaintLayer(context->image, QStringLiteral("lineart"), OPACITY_OPAQUE_U8, colorSpace);
 
-    KisPaintOpPresetSP preset;
-    {
-        // Lines drawn in one stroke share their brush snapshot, and lines are
-        // rendered from several threads when a vector layer repaints.
-        static QMutex cloneMutex;
-        QMutexLocker locker(&cloneMutex);
-        preset = m_brush->clone().dynamicCast<KisPaintOpPreset>();
-    }
-    if (!preset || !preset->settings()) {
-        return QImage();
-    }
-    preset->settings()->setPaintOpSize(m_fullPressureWidth * renderScale);
+        KisPaintOpPresetSP preset;
+        {
+            // Lines drawn in one stroke share their brush snapshot, and lines
+            // are rendered from several threads when a vector layer repaints.
+            static QMutex cloneMutex;
+            QMutexLocker locker(&cloneMutex);
+            preset = m_brush->clone().dynamicCast<KisPaintOpPreset>();
+        }
+        if (!preset || !preset->settings()) {
+            return QImage();
+        }
+        preset->settings()->setPaintOpSize(paintOpSize);
 
-    KisPainter brushPainter(device);
-    brushPainter.setPaintColor(KoColor(lineColor(), colorSpace));
-    brushPainter.setBackgroundColor(KoColor(Qt::white, colorSpace));
-    brushPainter.setCompositeOpId(COMPOSITE_OVER);
-    brushPainter.setOpacityF(preset->settings()->paintOpOpacity());
-    brushPainter.setPaintOpPreset(preset, layer, image);
-    if (!brushPainter.paintOp()) {
-        return QImage();
+        context->painter.reset(new KisPainter(context->layer->paintDevice()));
+        KisPainter &painter = *context->painter;
+        painter.setPaintColor(KoColor(color, colorSpace));
+        painter.setBackgroundColor(KoColor(Qt::white, colorSpace));
+        painter.setCompositeOpId(COMPOSITE_OVER);
+        painter.setOpacityF(preset->settings()->paintOpOpacity());
+        painter.setPaintOpPreset(preset, context->layer, context->image);
+        if (!painter.paintOp()) {
+            return QImage();
+        }
     }
+    KisPainter &brushPainter = *context->painter;
+    KisPaintDeviceSP device = context->layer->paintDevice();
 
     // Widths map back to the pen pressure the line was drawn with.
     auto paintInfo = [&](const KomaLineartPoint &point) {
@@ -454,7 +555,10 @@ QImage KomaLineartShape::renderWithBrush(qreal scale, QRectF *localRect) const
     }
 
     *localRect = QRectF(bounds.topLeft(), QSizeF(width, height) / renderScale);
-    return device->convertToQImage(nullptr, 0, 0, width, height);
+    const QImage result = device->convertToQImage(nullptr, 0, 0, width, height);
+    brushPainter.takeDirtyRegion();
+    pool.giveBack(std::move(context));
+    return result;
 }
 
 QColor KomaLineartShape::lineColor() const
